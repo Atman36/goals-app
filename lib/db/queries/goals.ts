@@ -6,6 +6,7 @@ import {
   goals,
   goalKindEnum,
   goalStatusEnum,
+  mediaItems,
   type Goal,
   type NewGoal,
 } from "@/lib/db/schema";
@@ -19,6 +20,8 @@ export interface GoalWithProgress extends Goal {
   saved: bigint;
   checklistDone: number;
   checklistTotal: number;
+  /** storage_path of the cover media item (coverImageId), null when unset/deleted. */
+  coverStoragePath: string | null;
 }
 
 export interface ListGoalsOptions {
@@ -67,12 +70,14 @@ function toGoalWithProgress(row: {
   saved: string | null;
   checklistDone: number | null;
   checklistTotal: number | null;
+  coverStoragePath: string | null;
 }): GoalWithProgress {
   return {
     ...row.goal,
     saved: (row.goal.initialAmount ?? 0n) + BigInt(row.saved ?? "0"),
     checklistDone: row.checklistDone ?? 0,
     checklistTotal: row.checklistTotal ?? 0,
+    coverStoragePath: row.coverStoragePath,
   };
 }
 
@@ -107,10 +112,12 @@ export async function listGoals(
       saved: savedSq.total,
       checklistDone: checklistSq.done,
       checklistTotal: checklistSq.total,
+      coverStoragePath: mediaItems.storagePath,
     })
     .from(goals)
     .leftJoin(savedSq, eq(savedSq.goalId, goals.id))
     .leftJoin(checklistSq, eq(checklistSq.goalId, goals.id))
+    .leftJoin(mediaItems, and(eq(mediaItems.id, goals.coverImageId), isNull(mediaItems.deletedAt)))
     .where(and(...conditions))
     .orderBy(...orderByFor(opts.sort));
 
@@ -134,10 +141,12 @@ export async function getGoalWithDetails(
       saved: savedSq.total,
       checklistDone: checklistSq.done,
       checklistTotal: checklistSq.total,
+      coverStoragePath: mediaItems.storagePath,
     })
     .from(goals)
     .leftJoin(savedSq, eq(savedSq.goalId, goals.id))
     .leftJoin(checklistSq, eq(checklistSq.goalId, goals.id))
+    .leftJoin(mediaItems, and(eq(mediaItems.id, goals.coverImageId), isNull(mediaItems.deletedAt)))
     .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
     .limit(1);
 

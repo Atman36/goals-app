@@ -131,9 +131,7 @@ export default async function DashboardPage({
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {goals.map((goal) => (
-            // coverUrl is always null: listGoals doesn't join media storagePath and no
-            // provided query fetches a single media row by id — see T7 deviation note.
-            <GoalCard key={goal.id} goal={goal} coverUrl={null} />
+            <GoalCard key={goal.id} goal={goal} />
           ))}
         </div>
       )}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Progress } from "@/components/ui/progress";
+import { getSignedMediaUrl } from "@/lib/storage";
 import { calcFinancialProgress, formatMoney } from "@/lib/utils/money";
 import type { GoalWithProgress } from "@/lib/db/queries/goals";
 import type { Currency } from "@/lib/validators/goal";
@@ -20,14 +21,21 @@ function goalProgress(goal: GoalWithProgress): number {
   return 0;
 }
 
-export function GoalCard({
-  goal,
-  coverUrl,
-}: {
-  goal: GoalWithProgress;
-  /** Signed read URL for goal.coverImageId, or null to show the gradient placeholder. */
-  coverUrl: string | null;
-}) {
+/** The bucket is private (lib/storage.ts) — covers always go through a signed
+ *  read URL. Falls back to null (gradient placeholder) instead of throwing:
+ *  Supabase env vars may be absent at runtime, and a broken cover must never
+ *  crash the dashboard. */
+async function resolveCoverUrl(storagePath: string | null): Promise<string | null> {
+  if (!storagePath) return null;
+  try {
+    return await getSignedMediaUrl(storagePath);
+  } catch {
+    return null;
+  }
+}
+
+export async function GoalCard({ goal }: { goal: GoalWithProgress }) {
+  const coverUrl = await resolveCoverUrl(goal.coverStoragePath);
   const isFinancial = goal.kind === "financial";
   const isAchieved = goal.status === "achieved";
   const percent = Math.round(goalProgress(goal) * 100);

@@ -13,7 +13,7 @@ export function EmptyState({
   actionLabel?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-20 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-[22px] border-[1.5px] border-dashed border-foreground/18 py-20 text-center">
       <h2 className="text-lg font-medium">{title}</h2>
       <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
       {actionHref && actionLabel ? (

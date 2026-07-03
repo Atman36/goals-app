@@ -1,29 +1,27 @@
 import Link from "next/link";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Дашборд" },
-  { href: "/gallery", label: "Галерея" },
-  { href: "/settings", label: "Настройки" },
-];
+import { Button } from "@/components/ui/button";
+import { NavLinks } from "@/components/nav-links";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link href="/" className="text-lg font-semibold tracking-tight">
+      <header className="sticky top-0 z-10 border-b bg-background/86 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <Link href="/" className="font-display text-lg font-bold tracking-tight">
             Цели
           </Link>
-          <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-            {NAV_ITEMS.map((item) => (
-              <Link key={item.href} href={item.href} className="hover:text-foreground">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <NavLinks />
+          <div className="flex items-center gap-3">
+            <Button nativeButton={false} render={<Link href="/goals/new">+ Новая цель</Link>} />
+            <div
+              aria-hidden
+              className="size-[38px] shrink-0 rounded-full [background-image:var(--gradient-tile)]"
+            />
+          </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 animate-fade-in px-4 py-6 sm:px-6">{children}</main>
     </div>
   );
 }

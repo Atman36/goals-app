@@ -37,8 +37,12 @@ export async function updateSession(request: NextRequest) {
   // never be bounced back to /login themselves.
   const isAuthRoute =
     request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/auth");
+  // Fail CLOSED: an unset OWNER_EMAIL grants access to no one (matches
+  // sendMagicLink / the OAuth callback, which both reject when it's absent).
+  // Never `!ALLOWED_EMAIL || …` — that would let any authenticated session
+  // (e.g. one minted directly against Supabase Auth) bypass the allowlist.
   const isAllowed =
-    !!user && (!ALLOWED_EMAIL || user.email?.toLowerCase() === ALLOWED_EMAIL.toLowerCase());
+    !!user && !!ALLOWED_EMAIL && user.email?.toLowerCase() === ALLOWED_EMAIL.toLowerCase();
 
   if (!isAllowed && !isAuthRoute) {
     if (user) {

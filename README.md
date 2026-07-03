@@ -2,35 +2,80 @@
 
 Персональное веб-приложение для постановки, финансирования и достижения целей — построено на доказательной методологии достижения целей (теория функциональных систем Анохина, WOOP, Implementation Intentions, Self-Monitoring).
 
-Полное описание продукта, пользовательские сценарии, модель данных и фазы разработки — в [`docs/prd-goals-app.md`](docs/prd-goals-app.md).
-
-Промпт для дальнейшей сборки полного MVP силами AI-агента — в [`docs/BUILD_PROMPT.md`](docs/BUILD_PROMPT.md).
-
 ## Стек
 
-Next.js 15+ (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle ORM · Supabase (Postgres + Auth + Storage) · Zod · react-hook-form.
+Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle ORM · Supabase (Postgres + Auth + Storage) · TanStack Query · Zod · react-hook-form.
 
 ## Статус
 
-Базовый каркас: структура проекта, схема БД, Supabase-клиенты, Zod-валидаторы, заглушки страниц. Бизнес-логика (Server Actions, реальные запросы, визард создания цели, quick-add) ещё не реализована — см. `docs/BUILD_PROMPT.md`.
+Реализован MVP (Phase 1 по PRD): аутентификация по allowlist владельца, CRUD целей, финансовый quick-add со взносами, чек-листы, комментарии, галерея, настройки. Функции Phase 2 (индикатор темпа, WOOP, рефлексии, FX) присутствуют только как заглушки — см. «Известные ограничения».
 
 ## Начало работы
 
-1. Создайте проект в [Supabase](https://supabase.com/dashboard) и скопируйте `.env.example` в `.env.local`, заполнив переменные (URL, anon key, connection string).
-2. Установите зависимости и примените схему БД:
+Что нужно свежей машине, чтобы поднять приложение:
 
-   ```bash
-   npm install
-   npm run db:push
-   ```
+### 1. Проект Supabase и переменные окружения
 
-3. Запустите dev-сервер:
+Создайте проект в [Supabase](https://supabase.com/dashboard), затем скопируйте `.env.example` → `.env.local` и заполните:
 
-   ```bash
-   npm run dev
-   ```
+| Переменная | Где взять |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Settings → API → Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Settings → API → Project API keys → `anon` `public` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Settings → API → Project API keys → `service_role` (секрет) |
+| `DATABASE_URL` | Settings → Database → Connection string (пул «Transaction») |
+| `OWNER_EMAIL` | Ваш email — **единственный**, кому разрешён вход (PRD §3.8) |
+| `NEXT_PUBLIC_SITE_URL` | Публичный origin (dev: `http://localhost:3000`) — из него строятся redirect-URL для входа |
 
-   Откройте [http://localhost:3000](http://localhost:3000).
+> Если `OWNER_EMAIL` не задан — вход закрыт для всех (fail-closed): и форма входа, и proxy отклоняют любую сессию.
+
+### 2. Миграции БД
+
+`npm run db:generate` уже выполнен — SQL лежит в `drizzle/`. Примените обе миграции (`npx drizzle-kit migrate` или вручную через SQL Editor в Supabase), **включая `0001`** — в ней RLS-политики, CHECK-ограничения и триггер валютной блокировки:
+
+```bash
+npx drizzle-kit migrate
+```
+
+> Не используйте `db:push` для настоящей БД: он синхронизирует только `schema.ts` и пропустит `0001` (RLS/constraints/trigger написаны вручную).
+
+### 3. Storage-бакет
+
+В проекте Supabase создайте **приватный** бакет Storage с именем `media` (Storage → New bucket → снять галочку «Public»). Все обложки и фото галереи читаются через короткоживущие signed URL.
+
+### 4. Auth: Google OAuth + magic link
+
+В Supabase → Authentication:
+
+- включите провайдер **Google** (Providers → Google) и **Email** с magic link;
+- в **Redirect URLs** (URL Configuration) добавьте `<NEXT_PUBLIC_SITE_URL>/auth/callback` (OAuth) и `<NEXT_PUBLIC_SITE_URL>/auth/confirm` (magic link).
+
+### 5. Ежедневные бэкапы
+
+Включите daily backups в настройках проекта Supabase (Database → Backups) — требование PRD §8.1 (P0). Это настройка дашборда, не код.
+
+### 6. Sentry (опционально)
+
+Для сбора ошибок задайте `SENTRY_DSN` и `NEXT_PUBLIC_SENTRY_DSN`.
+
+### 7. Запуск и проверка
+
+```bash
+npm install
+npm run dev          # http://localhost:3000
+```
+
+Полная батарея проверок:
+
+```bash
+npm run typecheck && npm run lint && npm run test && npm run build
+```
+
+## Известные ограничения
+
+- **Нет живого e2e-прогона.** Кодовая база проверена статически + `typecheck/lint/test/build`; сквозной прогон с реальным Supabase-проектом ещё не выполнялся.
+- **Phase 2 — заглушки.** Индикатор темпа (pace), WOOP, еженедельные рефлексии и мультивалютный пересчёт (FX) пока не реализованы как функции.
+- **Аналитика без PostHog.** События (`lib/analytics/events.ts`) пишутся через pino-логгер; отправка в PostHog отложена до Phase 2.
 
 ## Скрипты
 
@@ -49,7 +94,7 @@ Next.js 15+ (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle 
 ```
 app/
   (auth)/login/            вход (magic link + Google)
-  (app)/                   защищённая зона (см. middleware.ts)
+  (app)/                   защищённая зона (гейт — proxy.ts + lib/supabase/middleware.ts)
     page.tsx               дашборд
     goals/new/              визард создания цели
     goals/[goalId]/         страница цели

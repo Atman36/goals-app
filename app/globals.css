@@ -165,3 +165,18 @@
     @apply font-sans;
   }
 }
+
+/* components/confetti.tsx — hand-rolled celebration burst (T8, no deps). Each
+   piece randomizes duration/delay via inline style, so this is a plain
+   keyframe rather than a Tailwind --animate-* utility. No new color tokens
+   introduced (piece colors are inline from the JS palette). */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10%) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0.9;
+  }
+}

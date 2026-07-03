@@ -82,9 +82,15 @@ export async function createSignedUpload(input: {
  * Registers an already-uploaded object as a mediaItems row. Ownership is
  * enforced by insertMediaItem itself (userId-scoped); a goalId the caller
  * doesn't own simply fails to attach (returns null → typed error here).
+ *
+ * `commentId` (T8): when a comment attaches a photo, the row is linked to
+ * BOTH the comment and the goal (goalId also passed) so it appears in the
+ * goal's own gallery via listMediaByGoal, matching PRD §3.3 ("photo also
+ * appears in goal gallery") without a second query.
  */
 export async function registerMedia(input: {
   goalId?: string;
+  commentId?: string;
   path: string;
   width?: number;
   height?: number;
@@ -99,7 +105,7 @@ export async function registerMedia(input: {
 
   const media = await insertMediaItem(user.id, {
     goalId: input.goalId ?? null,
-    commentId: null,
+    commentId: input.commentId ?? null,
     storagePath: input.path,
     width: input.width ?? null,
     height: input.height ?? null,
@@ -117,9 +123,9 @@ export async function registerMedia(input: {
   track({
     name: "media_uploaded",
     goal_id: input.goalId,
-    context: input.setAsCover ? "cover" : "gallery",
+    context: input.commentId ? "comment" : input.setAsCover ? "cover" : "gallery",
   });
-  log.info({ mediaId: media.id, goalId: input.goalId }, "media registered");
+  log.info({ mediaId: media.id, goalId: input.goalId, commentId: input.commentId }, "media registered");
 
   if (input.goalId) {
     revalidatePath(`/goals/${input.goalId}`);
@@ -128,4 +134,26 @@ export async function registerMedia(input: {
   revalidatePath("/");
 
   return { ok: true, mediaId: media.id };
+}
+
+export type SetCoverResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Promotes an already-existing gallery image to be the goal's cover — T8's
+ * "сделать обложкой" thumbnail action. Distinct from registerMedia's
+ * setAsCover flag, which only covers the "just uploaded" case (it inserts a
+ * new mediaItems row); this reuses the existing row's id via the same
+ * updateGoal query registerMedia already calls, without duplicating it.
+ */
+export async function setGoalCover(goalId: string, mediaId: string): Promise<SetCoverResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Не авторизовано" };
+
+  const updated = await updateGoalQuery(user.id, goalId, { coverImageId: mediaId });
+  if (!updated) return { ok: false, error: "Цель не найдена" };
+
+  revalidatePath(`/goals/${goalId}`);
+  revalidatePath("/");
+
+  return { ok: true };
 }

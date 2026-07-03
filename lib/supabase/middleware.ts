@@ -32,13 +32,28 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
-  const isAllowed = !!user && (!ALLOWED_EMAIL || user.email === ALLOWED_EMAIL);
+  // /auth/* covers the magic-link confirm + OAuth callback routes — they run
+  // before a session exists (or before the owner check below), so they must
+  // never be bounced back to /login themselves.
+  const isAuthRoute =
+    request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/auth");
+  const isAllowed =
+    !!user && (!ALLOWED_EMAIL || user.email?.toLowerCase() === ALLOWED_EMAIL.toLowerCase());
 
   if (!isAllowed && !isAuthRoute) {
+    if (user) {
+      // A non-owner session slipped past — sign them out, not just redirect,
+      // so the stale cookie can't keep granting access on other routes.
+      await supabase.auth.signOut();
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    for (const cookie of supabaseResponse.cookies.getAll()) {
+      redirectResponse.cookies.set(cookie);
+    }
+    return redirectResponse;
   }
 
   return supabaseResponse;

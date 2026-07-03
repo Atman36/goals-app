@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 type GoalFormProps =
   | { mode: "create"; kind: "financial" | "non_financial"; defaultCurrency: Currency }
-  | { mode: "edit"; goal: GoalWithProgress; currencyLocked: boolean };
+  | { mode: "edit"; goal: GoalWithProgress; currencyLocked: boolean; initialCoverUrl?: string };
 
 export function GoalForm(props: GoalFormProps) {
   const router = useRouter();
@@ -101,6 +101,7 @@ export function GoalForm(props: GoalFormProps) {
 
       <CoverUpload
         goalId={props.mode === "edit" ? props.goal.id : undefined}
+        initialPreviewUrl={props.mode === "edit" ? props.initialCoverUrl : undefined}
         onFileReady={setPendingCover}
       />
 

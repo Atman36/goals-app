@@ -1,9 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isOwnerEmail } from "@/lib/owner";
 
 // allowlist of a single owner email — see PRD §3.8 (personal product, closed signup)
-const ALLOWED_EMAIL = process.env.OWNER_EMAIL;
-
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -37,12 +36,12 @@ export async function updateSession(request: NextRequest) {
   // never be bounced back to /login themselves.
   const isAuthRoute =
     request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/auth");
-  // Fail CLOSED: an unset OWNER_EMAIL grants access to no one (matches
+  // Fail CLOSED: an unset owner email grants access to no one (matches
   // sendMagicLink / the OAuth callback, which both reject when it's absent).
-  // Never `!ALLOWED_EMAIL || …` — that would let any authenticated session
-  // (e.g. one minted directly against Supabase Auth) bypass the allowlist.
-  const isAllowed =
-    !!user && !!ALLOWED_EMAIL && user.email?.toLowerCase() === ALLOWED_EMAIL.toLowerCase();
+  // Never invert `isOwnerEmail(...)` into a truthy-only check — that would
+  // let any authenticated session (e.g. one minted directly against Supabase
+  // Auth) bypass the allowlist. isOwnerEmail itself fails closed.
+  const isAllowed = !!user && isOwnerEmail(user.email);
 
   if (!isAllowed && !isAuthRoute) {
     if (user) {

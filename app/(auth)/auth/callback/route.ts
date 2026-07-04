@@ -2,12 +2,11 @@ import { redirect } from "next/navigation";
 import { type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { upsertUser } from "@/lib/db/queries/users";
+import { isOwnerEmail } from "@/lib/owner";
 
 // Google OAuth landing route — exchanges the PKCE `code` for a session, then
 // enforces the owner allowlist (client-side signInWithOAuth can't check this
 // up front). Non-owner accounts are signed back out immediately. PRD §3.8.
-const OWNER_EMAIL = process.env.OWNER_EMAIL;
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
@@ -17,7 +16,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user?.email) {
-      const isOwner = !!OWNER_EMAIL && data.user.email.toLowerCase() === OWNER_EMAIL.toLowerCase();
+      const isOwner = isOwnerEmail(data.user.email);
 
       if (!isOwner) {
         await supabase.auth.signOut();

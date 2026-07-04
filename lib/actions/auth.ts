@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isOwnerEmail } from "@/lib/owner";
 
 // PRD §3.8 — personal product, closed signup: magic links only ever go to the
 // single owner. SITE_URL builds the redirect the confirm route lands on.
@@ -27,8 +28,7 @@ export async function sendMagicLink(
 
   // Allowlist check happens BEFORE any Supabase call — strangers never receive
   // an email, they just get a generic rejection.
-  const ownerEmail = process.env.OWNER_EMAIL;
-  if (!ownerEmail || email.toLowerCase() !== ownerEmail.toLowerCase()) {
+  if (!isOwnerEmail(email)) {
     return { status: "error", message: "Вход только для владельца" };
   }
 

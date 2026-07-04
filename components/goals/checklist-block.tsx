@@ -289,6 +289,7 @@ export function ChecklistBlock({
         <div className="flex gap-2">
           <Input
             placeholder="Новый шаг"
+            aria-label="Название шага"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="flex-1"
@@ -309,6 +310,7 @@ export function ChecklistBlock({
         <div className="flex gap-2">
           <Input
             placeholder="Заметка (опционально)"
+            aria-label="Заметка"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             className="flex-1"

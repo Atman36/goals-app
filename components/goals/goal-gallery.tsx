@@ -9,11 +9,11 @@ import { createSignedUpload, registerMedia, setGoalCover } from "@/lib/actions/m
 import { trackGalleryOpened } from "@/lib/actions/analytics";
 import { Lightbox, type LightboxItem } from "@/components/gallery/lightbox";
 import { cn } from "@/lib/utils";
+import { MAX_UPLOAD_BYTES } from "@/lib/validators/media";
 
-// Mirrors lib/storage.ts's MAX_UPLOAD_BYTES/BUCKET_MEDIA — see cover-upload.tsx
-// for why this client-side copy exists (that module imports the server-only
-// Supabase client). The Server Action re-validates before minting the URL.
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// BUCKET_MEDIA mirrors lib/storage.ts's bucket name — see cover-upload.tsx for
+// why this client-side copy exists (that module imports the server-only
+// Supabase client).
 const BUCKET_MEDIA = "media";
 
 async function detectImageMime(file: File): Promise<string | null> {

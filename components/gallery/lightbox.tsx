@@ -51,6 +51,9 @@ export function Lightbox({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Просмотр фото"
       className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/80 p-4"
       onClick={onClose}
     >
@@ -91,6 +94,7 @@ export function Lightbox({
       ) : null}
 
       <figure
+        role="presentation"
         className="flex max-h-full max-w-3xl flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >

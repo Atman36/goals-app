@@ -5,13 +5,13 @@ import { ImageUp, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { createSignedUpload } from "@/lib/actions/media";
+import { MAX_UPLOAD_BYTES } from "@/lib/validators/media";
 
-// Mirrors lib/storage.ts's MAX_UPLOAD_BYTES/ALLOWED_MEDIA_TYPES/BUCKET_MEDIA.
-// That module also imports the Supabase *server* client (next/headers), so it
-// can't be imported here — this is the client-side UX-only copy; the Server
-// Action re-checks size/type before minting the signed upload URL, which is
-// the real gate (same client-schema/domain-schema split as goal-form).
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// BUCKET_MEDIA mirrors lib/storage.ts's bucket name. That module also imports
+// the Supabase *server* client (next/headers), so it can't be imported here —
+// this is the client-side UX-only copy; the Server Action re-checks size/type
+// before minting the signed upload URL, which is the real gate (same
+// client-schema/domain-schema split as goal-form).
 const BUCKET_MEDIA = "media";
 
 /** Client-side type check by magic bytes, not extension/mime — PRD §7. The

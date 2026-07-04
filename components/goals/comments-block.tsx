@@ -8,11 +8,11 @@ import { createClient } from "@/lib/supabase/client";
 import { createSignedUpload } from "@/lib/actions/media";
 import { addComment, deleteComment } from "@/lib/actions/comments";
 import type { Comment } from "@/lib/db/schema";
+import { MAX_UPLOAD_BYTES } from "@/lib/validators/media";
 
-// Mirrors lib/storage.ts's MAX_UPLOAD_BYTES/BUCKET_MEDIA — see cover-upload.tsx
-// for why this client-side copy exists (that module imports the server-only
-// Supabase client). The Server Action re-validates before minting the URL.
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// BUCKET_MEDIA mirrors lib/storage.ts's bucket name — see cover-upload.tsx for
+// why this client-side copy exists (that module imports the server-only
+// Supabase client).
 const BUCKET_MEDIA = "media";
 
 async function detectImageMime(file: File): Promise<string | null> {
@@ -159,6 +159,7 @@ export function CommentsBlock({
         <textarea
           rows={3}
           placeholder="Написать комментарий…"
+          aria-label="Текст комментария"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"

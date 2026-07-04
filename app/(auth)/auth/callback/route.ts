@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
       });
       redirect("/");
     }
+
+    if (!error && data.user && !data.user.email) {
+      await supabase.auth.signOut();
+    }
   }
 
   redirect("/login?error=auth");

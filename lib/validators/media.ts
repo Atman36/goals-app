@@ -19,7 +19,11 @@ export type SignedUploadInput = z.infer<typeof signedUploadSchema>;
 export const registerMediaSchema = z.object({
   goalId: z.uuid().optional(),
   commentId: z.uuid().optional(),
-  path: z.string().min(1).max(512),
+  path: z
+    .string()
+    .min(1)
+    .max(512)
+    .refine((p) => !p.split("/").includes(".."), { message: "Недопустимый путь" }),
   width: z.number().int().positive().max(20000).optional(),
   height: z.number().int().positive().max(20000).optional(),
   caption: z.string().max(2000).optional(),

@@ -166,6 +166,9 @@ export async function updateGoal(
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
+  const idCheck = goalIdSchema.safeParse(input.id);
+  if (!idCheck.success) return { ok: false, error: GENERIC_INVALID_ID_ERROR };
+
   const existing = await getGoalWithDetails(user.id, input.id);
   if (!existing) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 

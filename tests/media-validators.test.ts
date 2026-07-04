@@ -61,4 +61,12 @@ describe("registerMediaSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("rejects a path containing a '..' segment but still accepts a normal path", () => {
+    const traversal = registerMediaSchema.safeParse({ path: "user-1/../other/x.jpg" });
+    expect(traversal.success).toBe(false);
+
+    const normal = registerMediaSchema.safeParse({ path: "user-1/goal-1/uuid.jpg" });
+    expect(normal.success).toBe(true);
+  });
 });

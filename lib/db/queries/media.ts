@@ -115,6 +115,7 @@ async function canAttachMedia(
           eq(comments.id, values.commentId),
           eq(goals.userId, userId),
           isNull(comments.deletedAt),
+          isNull(goals.deletedAt),
         ),
       )
       .limit(1);

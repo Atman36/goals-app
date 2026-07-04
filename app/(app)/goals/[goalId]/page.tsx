@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { getCurrentUser } from "@/lib/auth";
@@ -32,7 +32,6 @@ export default async function GoalPage({
   const sp = await searchParams;
 
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) notFound();

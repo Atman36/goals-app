@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getDashboardAggregates, listGoals, type ListGoalsOptions } from "@/lib/db/queries/goals";
 import { calcFinancialProgress, formatMoney } from "@/lib/utils/money";
@@ -51,7 +50,6 @@ export default async function DashboardPage({
   searchParams: Promise<DashboardSearchParams>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
   const sp = await searchParams;
   const status = parseEnum(sp.status, STATUS_VALUES) ?? "active";

@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails, hasContributions } from "@/lib/db/queries/goals";
 import { getSignedMediaUrl } from "@/lib/storage";
@@ -13,7 +13,6 @@ export default async function EditGoalPage({
   const { goalId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) notFound();

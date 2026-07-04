@@ -2,7 +2,6 @@
 
 import { useActionState } from "react";
 import { updateProfile, type ProfileState } from "@/lib/actions/profile";
-import { signOut } from "@/lib/actions/auth";
 import type { User } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,17 +91,6 @@ export function SettingsForm({ user }: { user: User }) {
 
         <Button type="submit" disabled={isPending} className="self-start">
           {isPending ? "Сохраняем…" : "Сохранить"}
-        </Button>
-      </form>
-
-      <form
-        action={signOut}
-        onSubmit={(e) => {
-          if (!window.confirm("Выйти из аккаунта?")) e.preventDefault();
-        }}
-      >
-        <Button type="submit" variant="outline">
-          Выйти
         </Button>
       </form>
     </div>

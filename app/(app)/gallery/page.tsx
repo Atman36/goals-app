@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { listAllMedia } from "@/lib/db/queries/media";
 import { listGoals } from "@/lib/db/queries/goals";
@@ -17,7 +16,6 @@ export default async function GalleryPage({
   searchParams: Promise<{ goalId?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
   const sp = await searchParams;
 

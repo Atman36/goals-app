@@ -1,15 +1,12 @@
-import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingsForm } from "./settings-form";
 
-// PRD §3.8 profile: name, default currency, theme, weekly reflection day —
-// plus sign-out. Server component; the mutable fields + sign-out live in the
-// client-side settings-form.tsx (needs interactivity for the instant theme
-// toggle and the sign-out confirm dialog).
+// PRD §3.8 profile: name, default currency, theme, weekly reflection day.
+// Server component; the mutable fields live in the client-side
+// settings-form.tsx (needs interactivity for the instant theme toggle).
 export default async function SettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
   return (
     <div className="flex flex-col gap-6">

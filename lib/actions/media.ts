@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { BUCKET_MEDIA, type AllowedMediaType } from "@/lib/storage";
 import { insertMediaItem, countMediaForGoal } from "@/lib/db/queries/media";
 import { updateGoal as updateGoalQuery } from "@/lib/db/queries/goals";
@@ -73,7 +73,7 @@ export async function createSignedUpload(input: {
 
   const path = `${user.id}/${parsed.data.goalId ?? "unassigned"}/${crypto.randomUUID()}.${ext}`;
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.storage.from(BUCKET_MEDIA).createSignedUploadUrl(path);
 
   if (error || !data) {

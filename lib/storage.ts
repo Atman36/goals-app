@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   MAX_UPLOAD_BYTES,
   ALLOWED_MEDIA_TYPES,
@@ -26,7 +26,7 @@ const SIGNED_READ_URL_EXPIRY_SECONDS = 60 * 60; // 1h
  * URL. Returns null if the object doesn't exist / storage errors.
  */
 export async function getSignedMediaUrl(storagePath: string): Promise<string | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase.storage
     .from(BUCKET_MEDIA)
     .createSignedUrl(storagePath, SIGNED_READ_URL_EXPIRY_SECONDS);

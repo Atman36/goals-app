@@ -12,6 +12,8 @@ const initialState: MagicLinkState = { status: "idle" };
 const REDIRECT_ERROR_MESSAGES: Record<string, string> = {
   not_owner: "Вход только для владельца",
   auth: "Не удалось войти, попробуйте ещё раз",
+  link_invalid: "Ссылка недействительна. Запросите новую ссылку для входа.",
+  link_expired: "Ссылка устарела или уже использована. Запросите новую.",
 };
 
 export function LoginForm({ redirectError }: { redirectError?: string }) {

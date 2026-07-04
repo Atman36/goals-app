@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isOwnerEmail } from "@/lib/owner";
 import { emailSchema } from "@/lib/validators/auth";
+import { logger } from "@/lib/log";
 
 // PRD §3.8 — personal product, closed signup: magic links only ever go to the
 // single owner. SITE_URL builds the redirect the confirm route lands on.
@@ -37,7 +38,11 @@ export async function sendMagicLink(
   });
 
   if (error) {
-    return { status: "error", message: "Не удалось войти, попробуйте ещё раз" };
+    logger.error(
+      { step: "signInWithOtp", email, code: error.status ?? error.code, msg: error.message },
+      "magic link send failed",
+    );
+    return { status: "error", message: "Не удалось отправить ссылку. Попробуйте ещё раз." };
   }
 
   return { status: "success", message: "Ссылка отправлена на почту" };

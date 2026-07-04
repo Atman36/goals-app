@@ -9,7 +9,13 @@ function ownedByUser(userId: string) {
     db
       .select({ one: sql`1` })
       .from(goals)
-      .where(and(eq(goals.id, checklistItems.goalId), eq(goals.userId, userId))),
+      .where(
+        and(
+          eq(goals.id, checklistItems.goalId),
+          eq(goals.userId, userId),
+          isNull(goals.deletedAt),
+        ),
+      ),
   );
 }
 
@@ -26,6 +32,7 @@ export async function listChecklistItems(
         eq(checklistItems.goalId, goalId),
         eq(goals.userId, userId),
         isNull(checklistItems.deletedAt),
+        isNull(goals.deletedAt),
       ),
     )
     .orderBy(asc(checklistItems.sortOrder), asc(checklistItems.createdAt));

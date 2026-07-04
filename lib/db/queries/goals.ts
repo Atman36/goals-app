@@ -269,6 +269,7 @@ export async function hasContributions(userId: string, goalId: string): Promise<
         eq(contributions.goalId, goalId),
         eq(goals.userId, userId),
         isNull(contributions.deletedAt),
+        isNull(goals.deletedAt),
       ),
     )
     .limit(1);

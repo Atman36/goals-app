@@ -10,7 +10,12 @@ export async function listComments(userId: string, goalId: string): Promise<Comm
     .from(comments)
     .innerJoin(goals, eq(goals.id, comments.goalId))
     .where(
-      and(eq(comments.goalId, goalId), eq(goals.userId, userId), isNull(comments.deletedAt)),
+      and(
+        eq(comments.goalId, goalId),
+        eq(goals.userId, userId),
+        isNull(comments.deletedAt),
+        isNull(goals.deletedAt),
+      ),
     )
     .orderBy(asc(comments.createdAt));
 }
@@ -42,7 +47,13 @@ export async function softDeleteComment(userId: string, commentId: string): Prom
           db
             .select({ one: sql`1` })
             .from(goals)
-            .where(and(eq(goals.id, comments.goalId), eq(goals.userId, userId))),
+            .where(
+              and(
+                eq(goals.id, comments.goalId),
+                eq(goals.userId, userId),
+                isNull(goals.deletedAt),
+              ),
+            ),
         ),
       ),
     );

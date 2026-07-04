@@ -15,6 +15,7 @@ export async function listContributions(
         eq(contributions.goalId, goalId),
         eq(goals.userId, userId),
         isNull(contributions.deletedAt),
+        isNull(goals.deletedAt),
       ),
     )
     .orderBy(desc(contributions.occurredAt), desc(contributions.createdAt));
@@ -58,7 +59,13 @@ export async function softDeleteContribution(
           db
             .select({ one: sql`1` })
             .from(goals)
-            .where(and(eq(goals.id, contributions.goalId), eq(goals.userId, userId))),
+            .where(
+              and(
+                eq(goals.id, contributions.goalId),
+                eq(goals.userId, userId),
+                isNull(goals.deletedAt),
+              ),
+            ),
         ),
       ),
     );

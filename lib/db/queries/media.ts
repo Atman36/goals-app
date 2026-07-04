@@ -1,4 +1,15 @@
-import { and, count, desc, eq, exists, getTableColumns, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { comments, goals, mediaItems, type MediaItem } from "@/lib/db/schema";
@@ -12,14 +23,23 @@ function ownedByUser(userId: string) {
       db
         .select({ one: sql`1` })
         .from(goals)
-        .where(and(eq(goals.id, mediaItems.goalId), eq(goals.userId, userId))),
+        .where(
+          and(eq(goals.id, mediaItems.goalId), eq(goals.userId, userId), isNull(goals.deletedAt)),
+        ),
     ),
     exists(
       db
         .select({ one: sql`1` })
         .from(comments)
         .innerJoin(goals, eq(goals.id, comments.goalId))
-        .where(and(eq(comments.id, mediaItems.commentId), eq(goals.userId, userId))),
+        .where(
+          and(
+            eq(comments.id, mediaItems.commentId),
+            eq(goals.userId, userId),
+            isNull(comments.deletedAt),
+            isNull(goals.deletedAt),
+          ),
+        ),
     ),
   );
 }
@@ -49,7 +69,22 @@ export async function listAllMedia(
     .leftJoin(goals, eq(goals.id, mediaItems.goalId))
     .leftJoin(comments, eq(comments.id, mediaItems.commentId))
     .leftJoin(goalsViaComment, eq(goalsViaComment.id, comments.goalId))
-    .where(and(isNull(mediaItems.deletedAt), ownedByUser(userId)))
+    .where(
+      and(
+        isNull(mediaItems.deletedAt),
+        ownedByUser(userId),
+        // Parent chain must be alive: goal-attached media needs its goal non-deleted;
+        // comment-attached media needs the comment AND that comment's goal non-deleted.
+        or(
+          and(isNotNull(goals.id), isNull(goals.deletedAt)),
+          and(
+            isNotNull(comments.id),
+            isNull(comments.deletedAt),
+            isNull(goalsViaComment.deletedAt),
+          ),
+        ),
+      ),
+    )
     .orderBy(desc(mediaItems.createdAt));
 
   return rows.map((r) => ({

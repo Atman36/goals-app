@@ -1,25 +1,27 @@
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { setChecklistItemDone, softDeleteChecklistItem } from "@/lib/db/queries/checklist";
+import { checklistItemIdSchema, checklistPatchBodySchema } from "@/lib/validators/checklist";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
-
-const patchBodySchema = z.object({ isDone: z.boolean() });
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { itemId } = await params;
+  const { itemId: rawItemId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
 
+  const itemIdParsed = checklistItemIdSchema.safeParse(rawItemId);
+  if (!itemIdParsed.success) return jsonError("Некорректные данные", 400);
+  const itemId = itemIdParsed.data;
+
   const json = await request.json().catch(() => null);
-  const bodyParsed = patchBodySchema.safeParse(json);
+  const bodyParsed = checklistPatchBodySchema.safeParse(json);
   if (!bodyParsed.success) return jsonError("Проверьте поля формы", 400);
 
   const updated = await setChecklistItemDone(user.id, itemId, bodyParsed.data.isDone);
@@ -41,10 +43,14 @@ export async function DELETE(
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { itemId } = await params;
+  const { itemId: rawItemId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
+
+  const itemIdParsed = checklistItemIdSchema.safeParse(rawItemId);
+  if (!itemIdParsed.success) return jsonError("Некорректные данные", 400);
+  const itemId = itemIdParsed.data;
 
   await softDeleteChecklistItem(user.id, itemId);
   log.info({ itemId }, "checklist item soft-deleted");

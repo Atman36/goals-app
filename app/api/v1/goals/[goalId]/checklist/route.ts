@@ -1,32 +1,25 @@
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { listChecklistItems, insertChecklistItem } from "@/lib/db/queries/checklist";
-import { checklistItemSchema } from "@/lib/validators/checklist";
+import { checklistItemSchema, checklistPostBodySchema } from "@/lib/validators/checklist";
+import { goalIdSchema } from "@/lib/validators/goal";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
-
-// Structured if-then form is Phase 2 (PRD facts, T8 spec) — MVP only accepts
-// these 4 plain kinds from the client.
-const MVP_KINDS = ["action", "document", "purchase", "agreement"] as const;
-
-const postBodySchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  kind: z.enum(MVP_KINDS).optional(),
-  note: z.string().max(2000).optional(),
-  dueDate: z.coerce.date().optional(),
-});
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ goalId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { goalId } = await params;
+  const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
+
+  const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
+  if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);
+  const goalId = goalIdParsed.data;
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) return jsonError("Цель не найдена", 404);
@@ -42,16 +35,20 @@ export async function POST(
   { params }: { params: Promise<{ goalId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { goalId } = await params;
+  const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
+
+  const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
+  if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);
+  const goalId = goalIdParsed.data;
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) return jsonError("Цель не найдена", 404);
 
   const json = await request.json().catch(() => null);
-  const bodyParsed = postBodySchema.safeParse(json);
+  const bodyParsed = checklistPostBodySchema.safeParse(json);
   if (!bodyParsed.success) {
     log.warn({ issues: bodyParsed.error.issues }, "checklist POST: invalid body");
     return jsonError("Проверьте поля формы", 400);

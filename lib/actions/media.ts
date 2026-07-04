@@ -3,16 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import {
-  BUCKET_MEDIA,
-  MAX_UPLOAD_BYTES,
-  ALLOWED_MEDIA_TYPES,
-  type AllowedMediaType,
-} from "@/lib/storage";
+import { BUCKET_MEDIA, type AllowedMediaType } from "@/lib/storage";
 import { insertMediaItem, countMediaForGoal } from "@/lib/db/queries/media";
 import { updateGoal as updateGoalQuery } from "@/lib/db/queries/goals";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
+import {
+  signedUploadSchema,
+  registerMediaSchema,
+  setGoalCoverSchema,
+  type RegisterMediaInput,
+} from "@/lib/validators/media";
 
 const MAX_MEDIA_PER_GOAL = 50; // PRD §7
 
@@ -49,29 +50,34 @@ export async function createSignedUpload(input: {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Не авторизовано" };
 
-  if (input.fileSize <= 0 || input.fileSize > MAX_UPLOAD_BYTES) {
-    return { ok: false, error: "Файл больше 10 МБ" };
+  const parsed = signedUploadSchema.safeParse(input);
+  if (!parsed.success) {
+    log.warn({ issues: parsed.error.issues }, "createSignedUpload: validation failed");
+    if (parsed.error.issues.some((issue) => issue.path[0] === "fileSize")) {
+      return { ok: false, error: "Файл больше 10 МБ" };
+    }
+    if (parsed.error.issues.some((issue) => issue.path[0] === "mimeType")) {
+      return { ok: false, error: "Поддерживаются только JPG, PNG и WEBP" };
+    }
+    return { ok: false, error: "Некорректные данные" };
   }
 
-  if (!ALLOWED_MEDIA_TYPES.includes(input.mimeType as AllowedMediaType)) {
-    return { ok: false, error: "Поддерживаются только JPG, PNG и WEBP" };
-  }
-  const ext = EXT_BY_MIME[input.mimeType as AllowedMediaType];
+  const ext = EXT_BY_MIME[parsed.data.mimeType];
 
-  if (input.goalId) {
-    const existingCount = await countMediaForGoal(user.id, input.goalId);
+  if (parsed.data.goalId) {
+    const existingCount = await countMediaForGoal(user.id, parsed.data.goalId);
     if (existingCount >= MAX_MEDIA_PER_GOAL) {
       return { ok: false, error: "Не более 50 изображений на цель" };
     }
   }
 
-  const path = `${user.id}/${input.goalId ?? "unassigned"}/${crypto.randomUUID()}.${ext}`;
+  const path = `${user.id}/${parsed.data.goalId ?? "unassigned"}/${crypto.randomUUID()}.${ext}`;
 
   const supabase = await createClient();
   const { data, error } = await supabase.storage.from(BUCKET_MEDIA).createSignedUploadUrl(path);
 
   if (error || !data) {
-    log.error({ err: error, goalId: input.goalId }, "createSignedUpload: storage error");
+    log.error({ err: error, goalId: parsed.data.goalId }, "createSignedUpload: storage error");
     return { ok: false, error: "Не удалось подготовить загрузку" };
   }
 
@@ -88,47 +94,56 @@ export async function createSignedUpload(input: {
  * goal's own gallery via listMediaByGoal, matching PRD §3.3 ("photo also
  * appears in goal gallery") without a second query.
  */
-export async function registerMedia(input: {
-  goalId?: string;
-  commentId?: string;
-  path: string;
-  width?: number;
-  height?: number;
-  caption?: string;
-  setAsCover?: boolean;
-}): Promise<RegisterMediaResult> {
+export async function registerMedia(input: RegisterMediaInput): Promise<RegisterMediaResult> {
   const requestId = crypto.randomUUID();
   const log = withRequestId(requestId);
 
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Не авторизовано" };
 
+  const parsed = registerMediaSchema.safeParse(input);
+  if (!parsed.success) {
+    log.warn({ issues: parsed.error.issues }, "registerMedia: validation failed");
+    return { ok: false, error: "Некорректные данные" };
+  }
+
+  // Every legitimate signed-upload path is minted as `${user.id}/...`
+  // (see createSignedUpload) — a schema alone can't know the caller's
+  // userId, so this rejects a client-supplied path outside the caller's own
+  // storage prefix after parsing.
+  if (!parsed.data.path.startsWith(`${user.id}/`)) {
+    return { ok: false, error: "Некорректный путь файла" };
+  }
+
   const media = await insertMediaItem(user.id, {
-    goalId: input.goalId ?? null,
-    commentId: input.commentId ?? null,
-    storagePath: input.path,
-    width: input.width ?? null,
-    height: input.height ?? null,
-    caption: input.caption ?? null,
+    goalId: parsed.data.goalId ?? null,
+    commentId: parsed.data.commentId ?? null,
+    storagePath: parsed.data.path,
+    width: parsed.data.width ?? null,
+    height: parsed.data.height ?? null,
+    caption: parsed.data.caption ?? null,
   });
 
   if (!media) {
     return { ok: false, error: "Не удалось прикрепить изображение" };
   }
 
-  if (input.setAsCover && input.goalId) {
-    await updateGoalQuery(user.id, input.goalId, { coverImageId: media.id });
+  if (parsed.data.setAsCover && parsed.data.goalId) {
+    await updateGoalQuery(user.id, parsed.data.goalId, { coverImageId: media.id });
   }
 
   track({
     name: "media_uploaded",
-    goal_id: input.goalId,
-    context: input.commentId ? "comment" : input.setAsCover ? "cover" : "gallery",
+    goal_id: parsed.data.goalId,
+    context: parsed.data.commentId ? "comment" : parsed.data.setAsCover ? "cover" : "gallery",
   });
-  log.info({ mediaId: media.id, goalId: input.goalId, commentId: input.commentId }, "media registered");
+  log.info(
+    { mediaId: media.id, goalId: parsed.data.goalId, commentId: parsed.data.commentId },
+    "media registered",
+  );
 
-  if (input.goalId) {
-    revalidatePath(`/goals/${input.goalId}`);
+  if (parsed.data.goalId) {
+    revalidatePath(`/goals/${parsed.data.goalId}`);
   }
   revalidatePath("/gallery");
   revalidatePath("/");
@@ -149,10 +164,13 @@ export async function setGoalCover(goalId: string, mediaId: string): Promise<Set
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Не авторизовано" };
 
-  const updated = await updateGoalQuery(user.id, goalId, { coverImageId: mediaId });
+  const parsed = setGoalCoverSchema.safeParse({ goalId, mediaId });
+  if (!parsed.success) return { ok: false, error: "Некорректные данные" };
+
+  const updated = await updateGoalQuery(user.id, parsed.data.goalId, { coverImageId: parsed.data.mediaId });
   if (!updated) return { ok: false, error: "Цель не найдена" };
 
-  revalidatePath(`/goals/${goalId}`);
+  revalidatePath(`/goals/${parsed.data.goalId}`);
   revalidatePath("/");
 
   return { ok: true };

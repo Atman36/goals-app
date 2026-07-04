@@ -1,24 +1,11 @@
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { listContributions, insertContributionIdempotent } from "@/lib/db/queries/contributions";
-import { contributionSchema } from "@/lib/validators/contribution";
+import { contributionSchema, contributionPostBodySchema } from "@/lib/validators/contribution";
+import { goalIdSchema } from "@/lib/validators/goal";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
-
-// Client sends the unsigned magnitude in minor units (string, JSON can't
-// carry bigint) plus a sign flag — PRD §3.3.1 (contribution vs "списание").
-const postBodySchema = z.object({
-  id: z.uuid(),
-  amountMinor: z.string().regex(/^\d+$/, "amountMinor must be a non-negative integer string"),
-  note: z.string().max(280).optional(),
-  occurredAt: z.coerce.date(),
-  isNegative: z.boolean().optional().default(false),
-  // Client-side only knowledge (which preset button, if any, was used) — for
-  // the contribution_added {is_preset} analytics prop (PRD §8.4).
-  isPreset: z.boolean().optional().default(false),
-});
 
 function amountBucket(amountMajorAbs: number): "<1k" | "1k-10k" | ">10k" {
   if (amountMajorAbs < 1000) return "<1k";
@@ -31,10 +18,14 @@ export async function GET(
   { params }: { params: Promise<{ goalId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { goalId } = await params;
+  const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
+
+  const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
+  if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);
+  const goalId = goalIdParsed.data;
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) return jsonError("Цель не найдена", 404);
@@ -50,10 +41,14 @@ export async function POST(
   { params }: { params: Promise<{ goalId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { goalId } = await params;
+  const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
+
+  const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
+  if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);
+  const goalId = goalIdParsed.data;
 
   const goal = await getGoalWithDetails(user.id, goalId);
   if (!goal) return jsonError("Цель не найдена", 404);
@@ -63,7 +58,7 @@ export async function POST(
   }
 
   const json = await request.json().catch(() => null);
-  const bodyParsed = postBodySchema.safeParse(json);
+  const bodyParsed = contributionPostBodySchema.safeParse(json);
   if (!bodyParsed.success) {
     log.warn({ issues: bodyParsed.error.issues }, "contribution POST: invalid body");
     return jsonError("Проверьте поля формы", 400);

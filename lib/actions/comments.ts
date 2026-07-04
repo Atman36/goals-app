@@ -1,28 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { insertComment, softDeleteComment } from "@/lib/db/queries/comments";
 import { registerMedia } from "@/lib/actions/media";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
+import { addCommentSchema, deleteCommentSchema, type AddCommentInput } from "@/lib/validators/comment";
 
 export type SimpleActionResult = { ok: true } | { ok: false; error: string };
-
-const addCommentSchema = z.object({
-  goalId: z.uuid(),
-  body: z.string().trim().min(1).max(2000),
-  media: z
-    .object({
-      path: z.string().min(1),
-      width: z.number().int().positive().optional(),
-      height: z.number().int().positive().optional(),
-    })
-    .optional(),
-});
-
-export type AddCommentInput = z.infer<typeof addCommentSchema>;
 
 /**
  * Comments use the existing Server-Action + revalidatePath pattern (T8
@@ -78,10 +64,16 @@ export async function deleteComment(goalId: string, commentId: string): Promise<
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Не авторизовано" };
 
-  await softDeleteComment(user.id, commentId);
-  log.info({ goalId, commentId }, "comment soft-deleted");
+  const parsed = deleteCommentSchema.safeParse({ goalId, commentId });
+  if (!parsed.success) {
+    log.warn({ issues: parsed.error.issues }, "deleteComment: validation failed");
+    return { ok: false, error: "Проверьте поля формы" };
+  }
 
-  revalidatePath(`/goals/${goalId}`);
+  await softDeleteComment(user.id, parsed.data.commentId);
+  log.info({ goalId: parsed.data.goalId, commentId: parsed.data.commentId }, "comment soft-deleted");
+
+  revalidatePath(`/goals/${parsed.data.goalId}`);
 
   return { ok: true };
 }

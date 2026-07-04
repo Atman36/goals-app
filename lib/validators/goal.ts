@@ -6,6 +6,8 @@ export type Currency = z.infer<typeof currencySchema>;
 export const goalKindSchema = z.enum(["financial", "non_financial"]);
 export const goalStatusSchema = z.enum(["active", "achieved", "archived"]);
 
+export const goalIdSchema = z.uuid();
+
 export const selfConcordanceSchema = z.object({
   interest: z.number().int().min(1).max(5),
   values: z.number().int().min(1).max(5),

@@ -41,7 +41,7 @@ npx drizzle-kit migrate
 
 ### 3. Storage-бакет
 
-В проекте Supabase создайте **приватный** бакет Storage с именем `media` (Storage → New bucket → снять галочку «Public»). Все обложки и фото галереи читаются через короткоживущие signed URL.
+В проекте Supabase создайте **приватный** бакет Storage с именем `media` (Storage → New bucket → снять галочку «Public»). Все обложки и фото галереи читаются через короткоживущие signed URL. В настройках бакета задайте лимит размера файла 10 МБ и разрешённые MIME-типы `image/jpeg, image/png, image/webp` — так хранилище само обеспечивает то, что сейчас предполагает только код приложения.
 
 ### 4. Auth: Google OAuth + magic link
 

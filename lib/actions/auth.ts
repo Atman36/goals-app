@@ -1,15 +1,13 @@
 "use server";
 
-import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isOwnerEmail } from "@/lib/owner";
+import { emailSchema } from "@/lib/validators/auth";
 
 // PRD §3.8 — personal product, closed signup: magic links only ever go to the
 // single owner. SITE_URL builds the redirect the confirm route lands on.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
-const emailSchema = z.email();
 
 export type MagicLinkState = {
   status: "idle" | "success" | "error";

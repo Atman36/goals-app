@@ -1,29 +1,31 @@
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { softDeleteContribution } from "@/lib/db/queries/contributions";
+import { contributionIdSchema, contributionDeleteQuerySchema } from "@/lib/validators/contribution";
 import { withRequestId } from "@/lib/log";
 import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
-
-// softDeleteContribution (lib/db/queries/contributions.ts) is userId-scoped
-// but doesn't resolve/return which goal a contribution belongs to, and this
-// task may only *import* from lib/db/queries/** — so the client (which
-// already knows the goal it's viewing) passes goalId, which also lets this
-// route return the recalculated totals for that goal after the delete.
-const querySchema = z.object({ goalId: z.uuid() });
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ contributionId: string }> },
 ) {
   const log = withRequestId(crypto.randomUUID());
-  const { contributionId } = await params;
+  const { contributionId: rawContributionId } = await params;
 
   const user = await getCurrentUser();
   if (!user) return jsonError("Не авторизовано", 401);
 
+  const contributionIdParsed = contributionIdSchema.safeParse(rawContributionId);
+  if (!contributionIdParsed.success) return jsonError("Некорректные данные", 400);
+  const contributionId = contributionIdParsed.data;
+
   const { searchParams } = new URL(request.url);
-  const parsedQuery = querySchema.safeParse({ goalId: searchParams.get("goalId") });
+  // softDeleteContribution (lib/db/queries/contributions.ts) is userId-scoped
+  // but doesn't resolve/return which goal a contribution belongs to, and this
+  // task may only *import* from lib/db/queries/** — so the client (which
+  // already knows the goal it's viewing) passes goalId, which also lets this
+  // route return the recalculated totals for that goal after the delete.
+  const parsedQuery = contributionDeleteQuerySchema.safeParse({ goalId: searchParams.get("goalId") });
   if (!parsedQuery.success) return jsonError("Не указана цель", 400);
 
   const goal = await getGoalWithDetails(user.id, parsedQuery.data.goalId);

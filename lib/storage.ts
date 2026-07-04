@@ -1,16 +1,22 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  MAX_UPLOAD_BYTES,
+  ALLOWED_MEDIA_TYPES,
+  type AllowedMediaType,
+} from "@/lib/validators/media";
 
 /** Private bucket for all uploaded media. No live Supabase project is wired
  *  up yet (T6) — this is a name constant to code against; runtime bucket
  *  creation/config happens later. */
 export const BUCKET_MEDIA = "media";
 
-/** PRD §7 media limits: ≤10 MB/file. */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-
-/** PRD §7: jpg/png/webp, validated by magic bytes — not just extension. */
-export const ALLOWED_MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
-export type AllowedMediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
+// Re-exported from lib/validators/media.ts (the pure-constants home — that
+// file must stay importable from client components, so it can't depend on
+// this server-only module) so every existing `from "@/lib/storage"` import
+// site keeps working unchanged. MIME type is an allowlist string-compare on
+// client-supplied metadata; byte-level/size enforcement lives in the
+// Supabase bucket configuration (see README), not in this app code.
+export { MAX_UPLOAD_BYTES, ALLOWED_MEDIA_TYPES, type AllowedMediaType };
 
 const SIGNED_READ_URL_EXPIRY_SECONDS = 60 * 60; // 1h
 

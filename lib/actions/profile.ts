@@ -2,18 +2,9 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { updateUserProfile } from "@/lib/db/queries/users";
-
-// PRD §3.8 profile fields. reflectionDay matches the users.reflection_day
-// column's own contract (smallint comment: "0=Sunday..6=Saturday").
-const profileSchema = z.object({
-  name: z.string().trim().min(1).max(60),
-  defaultCurrency: z.enum(["RUB", "USD"]),
-  theme: z.enum(["light", "dark"]),
-  reflectionDay: z.coerce.number().int().min(0).max(6),
-});
+import { profileSchema } from "@/lib/validators/profile";
 
 export type ProfileState = {
   status: "idle" | "success" | "error";

@@ -332,7 +332,12 @@ export function QuickAddSheet({
             {error ? <p className="px-4 text-sm text-destructive">{error}</p> : null}
 
             <SheetFooter>
-              <Button type="submit" disabled={mutation.isPending || amountMinor <= 0n}>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                disabled={mutation.isPending || amountMinor <= 0n}
+              >
                 {mutation.isPending ? "Сохраняем…" : `Добавить ${formatMoney(amountMinor, currency)}`}
               </Button>
             </SheetFooter>

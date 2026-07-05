@@ -195,7 +195,7 @@ export function GoalForm(props: GoalFormProps) {
 
       {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
-      <Button type="submit" disabled={isPending}>
+      <Button type="submit" size="lg" className="w-full" disabled={isPending}>
         {isPending ? "Сохраняем…" : props.mode === "edit" ? "Сохранить" : "Создать цель"}
       </Button>
     </form>

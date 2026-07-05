@@ -92,14 +92,14 @@ export async function GoalCard({ goal }: { goal: GoalWithProgress }) {
           ) : isFinancial ? (
             <Link
               href={`/goals/${goal.id}?add=1`}
-              className="rounded-4xl bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/85"
+              className="rounded-4xl bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/85"
             >
               + Добавить
             </Link>
           ) : (
             <Link
               href={`/goals/${goal.id}#checklist`}
-              className="rounded-4xl border border-border px-3 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+              className="rounded-4xl border border-border px-3.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
             >
               Шаги →
             </Link>

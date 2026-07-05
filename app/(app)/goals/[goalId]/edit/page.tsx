@@ -32,7 +32,7 @@ export default async function EditGoalPage({
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Редактирование цели</h1>
+      <h1 className="font-display text-2xl font-bold tracking-tight">Редактирование цели</h1>
       <GoalForm mode="edit" goal={goal} currencyLocked={currencyLocked} initialCoverUrl={initialCoverUrl} />
       <GoalDangerActions goalId={goal.id} status={goal.status} />
     </div>

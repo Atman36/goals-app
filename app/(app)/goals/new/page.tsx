@@ -10,7 +10,7 @@ export default async function NewGoalPage() {
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Новая цель</h1>
+      <h1 className="font-display text-2xl font-bold tracking-tight">Новая цель</h1>
       <GoalWizard defaultCurrency={user.defaultCurrency} />
     </div>
   );

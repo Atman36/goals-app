@@ -9,9 +9,12 @@ import { listChecklistItems } from "@/lib/db/queries/checklist";
 import { listComments } from "@/lib/db/queries/comments";
 import { listMediaByGoal } from "@/lib/db/queries/media";
 import { getSignedMediaUrl } from "@/lib/storage";
+import { formatMoney } from "@/lib/utils/money";
+import { pluralRu } from "@/lib/utils/plural";
 import type { Currency } from "@/lib/validators/goal";
 import { Button } from "@/components/ui/button";
 import { FinancialProgressHeader, MarkAchievedButton, QuickAddSheet } from "@/components/goals/quick-add-sheet";
+import { CelebrationOverlay } from "@/components/goals/celebration-overlay";
 import { ContributionHistory } from "@/components/goals/contribution-history";
 import { ChecklistBlock, ChecklistProgressHeader } from "@/components/goals/checklist-block";
 import { CommentsBlock, type CommentWithPhotoUrl } from "@/components/goals/comments-block";
@@ -26,7 +29,7 @@ export default async function GoalPage({
   searchParams,
 }: {
   params: Promise<{ goalId: string }>;
-  searchParams: Promise<{ add?: string }>;
+  searchParams: Promise<{ add?: string; celebrate?: string }>;
 }) {
   const { goalId } = await params;
   const sp = await searchParams;
@@ -70,6 +73,14 @@ export default async function GoalPage({
 
   const deadlineLabel = format(parseISO(goal.deadline), "d MMMM yyyy", { locale: ru });
 
+  // Celebration screen (?celebrate=1 after marking achieved) — PRD §9 Phase 2.
+  const showCelebration = sp.celebrate === "1" && goal.status === "achieved";
+  const savedTotal = (goal.initialAmount ?? 0n) + contributions.reduce((s, c) => s + c.amount, 0n);
+  const doneItems = checklistItems.filter((i) => i.isDone).length;
+  const celebrationStatLine = isFinancial
+    ? `Накоплено ${formatMoney(savedTotal, goal.currency as Currency)} · ${contributions.length} ${pluralRu(contributions.length, "пополнение", "пополнения", "пополнений")}`
+    : `${doneItems} ${pluralRu(doneItems, "шаг", "шага", "шагов")} пройдено`;
+
   return (
     <div className="flex flex-col gap-8">
       <Link href="/" className="self-start text-sm text-muted-foreground hover:text-foreground">
@@ -103,10 +114,16 @@ export default async function GoalPage({
               currency={goal.currency as Currency}
               initialAmount={goal.initialAmount ?? 0n}
               targetAmount={goal.targetAmount ?? 0n}
+              deadline={goal.deadline}
               initialContributions={contributions}
             />
           ) : (
-            <ChecklistProgressHeader goalId={goal.id} goalKind={goal.kind} initialItems={checklistItems} />
+            <ChecklistProgressHeader
+              goalId={goal.id}
+              goalKind={goal.kind}
+              deadline={goal.deadline}
+              initialItems={checklistItems}
+            />
           )}
 
           <p className="text-sm text-muted-foreground">
@@ -141,6 +158,15 @@ export default async function GoalPage({
       )}
 
       <CommentsBlock goalId={goal.id} comments={commentsWithPhotos} />
+
+      {showCelebration ? (
+        <CelebrationOverlay
+          goalId={goal.id}
+          title={goal.title}
+          coverUrl={galleryImages[0]?.url ?? null}
+          statLine={celebrationStatLine}
+        />
+      ) : null}
     </div>
   );
 }

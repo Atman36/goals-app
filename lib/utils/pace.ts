@@ -49,3 +49,25 @@ export function comparePace(requiredPace: number, actualPace: number, tolerance 
   if (actualPace < requiredPace * (1 - tolerance)) return "behind";
   return "on_track";
 }
+
+/**
+ * Actual average savings pace over the trailing window (minor units/month) — the
+ * value fed into `comparePace` for the "в графике / отстаёте / опережаете" verdict
+ * (PRD §3.3.4). Sums signed contributions whose `occurredAt` falls within
+ * `windowMonths` of `from`, then divides by the window length.
+ */
+export function calcTrailingMonthlyPace(
+  contributions: readonly { amount: bigint; occurredAt: string }[],
+  from: Date = new Date(),
+  windowMonths = 3,
+): bigint {
+  const windowStart = from.getTime() - windowMonths * DAYS_PER_MONTH * MS_PER_DAY;
+  let sum = 0n;
+  for (const c of contributions) {
+    const t = new Date(c.occurredAt).getTime();
+    if (Number.isNaN(t) || t < windowStart || t > from.getTime()) continue;
+    sum += c.amount;
+  }
+  if (sum <= 0n) return 0n;
+  return sum / BigInt(windowMonths);
+}

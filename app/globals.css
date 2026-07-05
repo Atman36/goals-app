@@ -53,6 +53,7 @@
 
   --animate-fade-in: fade-in 0.3s ease both;
   --animate-pop-in: pop-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+  --animate-floaty: floaty 3s ease-in-out infinite;
 
   @keyframes fade-in {
     from {
@@ -70,6 +71,15 @@
     to {
       opacity: 1;
       transform: scale(1) translateY(0);
+    }
+  }
+  @keyframes floaty {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-9px);
     }
   }
 }

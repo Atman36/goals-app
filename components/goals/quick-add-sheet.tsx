@@ -18,6 +18,8 @@ import { ProgressRing } from "@/components/goals/progress-ring";
 import { Confetti } from "@/components/confetti";
 import { markAchieved } from "@/lib/actions/goals";
 import { calcFinancialProgress, formatMoney, toMinorUnits } from "@/lib/utils/money";
+import { calcRequiredMonthlyPace, calcTrailingMonthlyPace, comparePace } from "@/lib/utils/pace";
+import { cn } from "@/lib/utils";
 import type { Currency } from "@/lib/validators/goal";
 import type { Contribution } from "@/lib/db/schema";
 import {
@@ -60,26 +62,59 @@ export function FinancialProgressHeader({
   currency,
   initialAmount,
   targetAmount,
+  deadline,
   initialContributions,
 }: {
   goalId: string;
   currency: Currency;
   initialAmount: bigint;
   targetAmount: bigint;
+  deadline: string;
   initialContributions: Contribution[];
 }) {
   const { data: contributions } = useContributionsQuery(goalId, initialContributions);
   const saved = sumSaved(initialAmount, contributions);
   const percent = calcFinancialProgress(saved, targetAmount);
+  const remaining = saved >= targetAmount ? 0n : targetAmount - saved;
+
+  // Required monthly pace vs. actual trailing pace → "в графике / отстаёте /
+  // опережаете" (PRD §3.3.4). Hidden once the target is met or the deadline
+  // has passed (requiredPace null/0).
+  const requiredPace = calcRequiredMonthlyPace(targetAmount, saved, new Date(deadline));
+  const paceStatus =
+    requiredPace !== null && requiredPace > 0n
+      ? comparePace(Number(requiredPace), Number(calcTrailingMonthlyPace(contributions)))
+      : null;
 
   return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-6">
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
       <ProgressRing progress={percent} size={140} strokeWidth={14} />
       <div className="flex flex-col gap-1">
-        <span className="text-sm text-muted-foreground">Накоплено</span>
-        <span className="font-display text-xl font-bold">
-          {formatMoney(saved, currency)} из {formatMoney(targetAmount, currency)}
+        <span className="font-display text-[26px] leading-none font-bold tracking-tight">
+          {formatMoney(saved, currency)}
         </span>
+        <span className="text-[13px] text-muted-foreground">
+          из {formatMoney(targetAmount, currency)} · осталось {formatMoney(remaining, currency)}
+        </span>
+        {paceStatus && requiredPace !== null ? (
+          <span
+            className={cn(
+              "mt-2 inline-block self-start rounded-full px-3 py-1.5 text-xs font-bold",
+              paceStatus === "behind"
+                ? "bg-warn/12 text-warn"
+                : paceStatus === "ahead"
+                  ? "bg-positive/12 text-positive"
+                  : "bg-primary/12 text-primary",
+            )}
+          >
+            {paceStatus === "behind"
+              ? "Нужно ускориться"
+              : paceStatus === "ahead"
+                ? "Опережаете график"
+                : "В графике"}{" "}
+            · ~{formatMoney(requiredPace, currency)}/мес
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -94,7 +129,7 @@ export function MarkAchievedButton({ goalId }: { goalId: string }) {
   async function handleClick() {
     if (typeof window !== "undefined" && !window.confirm("Отметить цель достигнутой?")) return;
     const result = await markAchieved(goalId);
-    if (result.ok) router.refresh();
+    if (result.ok) router.replace(`/goals/${goalId}?celebrate=1`);
   }
 
   return (
@@ -245,7 +280,7 @@ export function QuickAddSheet({
     const result = await markAchieved(goalId);
     if (result.ok) {
       setShowAchievedPrompt(false);
-      router.refresh();
+      router.replace(`/goals/${goalId}?celebrate=1`);
     }
   }
 

@@ -8,6 +8,8 @@ import { Check, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProgressRing } from "@/components/goals/progress-ring";
+import { calcRequiredWeeklyItemPace } from "@/lib/utils/pace";
+import { pluralRu } from "@/lib/utils/plural";
 import { cn } from "@/lib/utils";
 import type { ChecklistItem } from "@/lib/db/schema";
 
@@ -90,10 +92,12 @@ export function useChecklistQuery(goalId: string, initialItems: ChecklistItem[])
 export function ChecklistProgressHeader({
   goalId,
   goalKind,
+  deadline,
   initialItems,
 }: {
   goalId: string;
   goalKind: GoalKind;
+  deadline: string;
   initialItems: ChecklistItem[];
 }) {
   const { data: items } = useChecklistQuery(goalId, initialItems);
@@ -101,16 +105,27 @@ export function ChecklistProgressHeader({
   const done = items.filter((i) => i.isDone).length;
   const percent = total > 0 ? done / total : 0;
 
+  // Required weekly item pace to reach the deadline (PRD §3.3.4). Non-financial
+  // only; hidden once every step is done or the deadline has passed.
+  const weeklyPace =
+    goalKind === "non_financial" ? calcRequiredWeeklyItemPace(total - done, new Date(deadline)) : null;
+  const weeklyItems = weeklyPace && weeklyPace > 0 ? Math.max(1, Math.ceil(weeklyPace)) : 0;
+
   return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-6">
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
       <ProgressRing progress={percent} size={140} strokeWidth={14} />
       <div className="flex flex-col gap-1">
-        <span className="text-sm text-muted-foreground">
-          {goalKind === "non_financial" ? "Шаги" : "Готовность"}
-        </span>
-        <span className="font-display text-xl font-bold">
+        <span className="font-display text-[26px] leading-none font-bold tracking-tight">
           {done} из {total}
         </span>
+        <span className="text-[13px] text-muted-foreground">
+          {goalKind === "non_financial" ? "шагов пройдено" : "готовность к цели"}
+        </span>
+        {weeklyItems > 0 ? (
+          <span className="mt-2 inline-block self-start rounded-full bg-primary/12 px-3 py-1.5 text-xs font-bold text-primary">
+            ~{weeklyItems} {pluralRu(weeklyItems, "шаг", "шага", "шагов")}/нед до срока
+          </span>
+        ) : null}
       </div>
     </div>
   );

@@ -48,7 +48,6 @@ export async function createSignedUpload(input: {
   const log = withRequestId(requestId);
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Не авторизовано" };
 
   const parsed = signedUploadSchema.safeParse(input);
   if (!parsed.success) {
@@ -99,7 +98,6 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
   const log = withRequestId(requestId);
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Не авторизовано" };
 
   const parsed = registerMediaSchema.safeParse(input);
   if (!parsed.success) {
@@ -162,7 +160,6 @@ export type SetCoverResult = { ok: true } | { ok: false; error: string };
  */
 export async function setGoalCover(goalId: string, mediaId: string): Promise<SetCoverResult> {
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Не авторизовано" };
 
   const parsed = setGoalCoverSchema.safeParse({ goalId, mediaId });
   if (!parsed.success) return { ok: false, error: "Некорректные данные" };

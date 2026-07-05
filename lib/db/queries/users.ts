@@ -4,28 +4,6 @@ import { users, type User } from "@/lib/db/schema";
 
 type NewUser = typeof users.$inferInsert;
 
-export async function getUserById(id: string): Promise<User | null> {
-  const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
-  return row ?? null;
-}
-
-/** Upserts by id (the Supabase auth user id) on first login. */
-export async function upsertUser(values: NewUser): Promise<User> {
-  const [row] = await db
-    .insert(users)
-    .values(values)
-    .onConflictDoUpdate({
-      target: users.id,
-      set: {
-        email: values.email,
-        name: values.name,
-        avatarUrl: values.avatarUrl,
-      },
-    })
-    .returning();
-  return row;
-}
-
 /**
  * Single-owner mode (T9): resolves the one fixed owner user row, creating it
  * on first run. Returns the oldest existing row if the table is non-empty

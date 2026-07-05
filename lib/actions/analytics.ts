@@ -16,8 +16,7 @@ import { goalIdSchema } from "@/lib/validators/goal";
  * failures are silent no-ops rather than surfaced errors.
  */
 export async function trackGalleryOpened(goalId: string): Promise<void> {
-  const user = await getCurrentUser();
-  if (!user) return;
+  await getCurrentUser();
 
   const parsed = goalIdSchema.safeParse(goalId);
   if (!parsed.success) return;

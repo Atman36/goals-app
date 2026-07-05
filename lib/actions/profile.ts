@@ -23,7 +23,6 @@ export async function updateProfile(
   formData: FormData,
 ): Promise<ProfileState> {
   const user = await getCurrentUser();
-  if (!user) return { status: "error", message: "Не авторизовано" };
 
   const parsed = profileSchema.safeParse({
     name: formData.get("name"),

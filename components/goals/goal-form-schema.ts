@@ -29,7 +29,13 @@ export const clientGoalSchema = z
       .string()
       .min(1, "Укажите срок")
       .refine((v) => !Number.isNaN(new Date(v).getTime()), "Некорректная дата"),
-    currencySymbol: z.enum(["RUB", "USD"]).optional(),
+    // `.or(z.literal(""))`: the hidden input backing this field (goal-form.tsx)
+    // renders "" for a non-financial goal (HTML has no concept of an
+    // `undefined` field value) — without this, the base shape rejects that ""
+    // as an invalid enum member on every non-financial submit, and since the
+    // error is only ever displayed inside the financial branch, the button
+    // silently does nothing.
+    currencySymbol: z.enum(["RUB", "USD"]).optional().or(z.literal("")),
     targetAmountMajor: z.string().optional(),
     initialAmountMajor: z.string().optional(),
   })

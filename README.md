@@ -4,11 +4,20 @@
 
 ## Стек
 
-Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle ORM · Supabase (Postgres + Auth + Storage) · TanStack Query · Zod · react-hook-form.
+Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle ORM · Supabase (Postgres + Storage) · TanStack Query · Zod · react-hook-form.
 
 ## Статус
 
-Реализован MVP (Phase 1 по PRD): аутентификация по allowlist владельца, CRUD целей, финансовый quick-add со взносами, чек-листы, комментарии, галерея, настройки. Функции Phase 2 (индикатор темпа, WOOP, рефлексии, FX) присутствуют только как заглушки — см. «Известные ограничения».
+Реализован MVP (Phase 1 по PRD): single-owner режим без логина (T9), CRUD целей, финансовый quick-add со взносами, чек-листы, комментарии, галерея, настройки. Функции Phase 2 (индикатор темпа, WOOP, рефлексии, FX) присутствуют только как заглушки — см. «Известные ограничения».
+
+> **Важно: в приложении нет аутентификации.** Раньше был вход по allowlist владельца
+> (magic link/Google) — T9 убрал его полностью: свободный тариф Supabase не позволяет
+> кастомизировать письма. `getCurrentUser()` всегда возвращает одну и ту же (единственную)
+> строку пользователя. Это значит: **любой, кто откроет публичный URL деплоя, получает
+> полный доступ на чтение/запись** ко всем целям, взносам и фото владельца. Если
+> приложение задеплоено (например, на Vercel) — закройте доступ на уровне платформы
+> (Vercel Deployment Protection / Password Protection) или держите деплой приватным;
+> сам код это больше не ограничивает.
 
 ## Начало работы
 
@@ -22,12 +31,11 @@ Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 + shadcn/ui · Drizzle O
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Settings → API → Project API keys → `anon` `public` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Settings → API → Project API keys → `service_role` (секрет) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Settings → API → Project API keys → `service_role` (секрет) — нужен для подписи storage-операций (T10): без пользовательской сессии (T9) анонимный клиент не проходит RLS приватного бакета `media` |
 | `DATABASE_URL` | Settings → Database → Connection string (пул «Transaction») |
-| `OWNER_EMAIL` | Ваш email — **единственный**, кому разрешён вход (PRD §3.8) |
-| `NEXT_PUBLIC_SITE_URL` | Публичный origin (dev: `http://localhost:3000`) — из него строятся redirect-URL для входа |
+| `OWNER_EMAIL` | Email единственного пользователя — используется только как значение `users.email` при первом создании его строки (см. `getOrCreateOwner`); опционален, без него подставится `owner@goals.local` |
 
-> Если `OWNER_EMAIL` не задан — вход закрыт для всех (fail-closed): и форма входа, и proxy отклоняют любую сессию.
+> `NEXT_PUBLIC_SITE_URL` из старой auth-схемы (redirect-URL для входа) больше не используется — T9 убрал вход целиком.
 
 ### 2. Миграции БД
 
@@ -43,22 +51,15 @@ npx drizzle-kit migrate
 
 В проекте Supabase создайте **приватный** бакет Storage с именем `media` (Storage → New bucket → снять галочку «Public»). Все обложки и фото галереи читаются через короткоживущие signed URL. В настройках бакета задайте лимит размера файла 10 МБ и разрешённые MIME-типы `image/jpeg, image/png, image/webp` — так хранилище само обеспечивает то, что сейчас предполагает только код приложения.
 
-### 4. Auth: Google OAuth + magic link
-
-В Supabase → Authentication:
-
-- включите провайдер **Google** (Providers → Google) и **Email** с magic link;
-- в **Redirect URLs** (URL Configuration) добавьте `<NEXT_PUBLIC_SITE_URL>/auth/callback` (OAuth) и `<NEXT_PUBLIC_SITE_URL>/auth/confirm` (magic link).
-
-### 5. Ежедневные бэкапы
+### 4. Ежедневные бэкапы
 
 Включите daily backups в настройках проекта Supabase (Database → Backups) — требование PRD §8.1 (P0). Это настройка дашборда, не код.
 
-### 6. Sentry (опционально)
+### 5. Sentry (опционально)
 
 Для сбора ошибок задайте `SENTRY_DSN` и `NEXT_PUBLIC_SENTRY_DSN`.
 
-### 7. Запуск и проверка
+### 6. Запуск и проверка
 
 ```bash
 npm install
@@ -73,7 +74,7 @@ npm run typecheck && npm run lint && npm run test && npm run build
 
 ## Известные ограничения
 
-- **Нет живого e2e-прогона.** Кодовая база проверена статически + `typecheck/lint/test/build`; сквозной прогон с реальным Supabase-проектом ещё не выполнялся.
+- **E2e прогнан вручную (2026-07-05)** против реального Supabase-проекта: обе цели (финансовая/чек-лист), quick-add, чек-лист, комментарии, настройки, галерея, 404, редактирование, валютная блокировка — все работают. Не проверялась вручную загрузка фото (нужен реальный файл) и архивирование цели.
 - **Phase 2 — заглушки.** Индикатор темпа (pace), WOOP, еженедельные рефлексии и мультивалютный пересчёт (FX) пока не реализованы как функции.
 - **Аналитика без PostHog.** События (`lib/analytics/events.ts`) пишутся через pino-логгер; отправка в PostHog отложена до Phase 2.
 
@@ -93,8 +94,8 @@ npm run typecheck && npm run lint && npm run test && npm run build
 
 ```
 app/
-  (auth)/login/            вход (magic link + Google)
-  (app)/                   защищённая зона (гейт — proxy.ts + lib/supabase/middleware.ts)
+  (auth)/login/            стаб-редирект на "/" (старая ссылка на вход, T9)
+  (app)/                   без auth-гейта — single-owner режим (T9)
     page.tsx               дашборд
     goals/new/              визард создания цели
     goals/[goalId]/         страница цели
@@ -104,7 +105,7 @@ app/
   api/v1/                   тонкий REST-слой (задел под Telegram Mini App, PRD §5.3)
 lib/
   db/                       Drizzle-схема и клиент
-  supabase/                 клиенты для браузера/сервера/middleware
+  supabase/                 клиенты для браузера/сервера (admin.ts — service-role, storage only)
   validators/               Zod-схемы (единый источник правды форм и Server Actions)
   utils/                    money.ts (bigint в минорных единицах), pace.ts (темп по PRD §3.3.4)
 components/

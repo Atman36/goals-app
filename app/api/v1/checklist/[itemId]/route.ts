@@ -14,7 +14,6 @@ export async function PATCH(
   const { itemId: rawItemId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) return jsonError("Не авторизовано", 401);
 
   const itemIdParsed = checklistItemIdSchema.safeParse(rawItemId);
   if (!itemIdParsed.success) return jsonError("Некорректные данные", 400);
@@ -46,7 +45,6 @@ export async function DELETE(
   const { itemId: rawItemId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) return jsonError("Не авторизовано", 401);
 
   const itemIdParsed = checklistItemIdSchema.safeParse(rawItemId);
   if (!itemIdParsed.success) return jsonError("Некорректные данные", 400);

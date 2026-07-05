@@ -14,8 +14,7 @@ import { track } from "@/lib/analytics/events";
  * break UX.
  */
 export async function trackGlobalGalleryOpened(): Promise<void> {
-  const user = await getCurrentUser();
-  if (!user) return;
+  await getCurrentUser();
 
   track({ name: "gallery_opened", scope: "global" });
 }

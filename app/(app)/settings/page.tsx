@@ -10,7 +10,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Настройки</h1>
+      <h1 className="font-display text-2xl font-bold tracking-tight">Настройки</h1>
       <Card className="max-w-md">
         <CardHeader>
           <CardTitle>Профиль</CardTitle>
@@ -20,7 +20,11 @@ export default async function SettingsPage() {
             <span className="text-muted-foreground">Почта</span>
             <span>{user.email}</span>
           </div>
-          <SettingsForm user={user} />
+          {/* Keyed by the fields the form pre-fills via defaultValue (uncontrolled
+              inputs) — without a key, a post-save revalidation re-renders this
+              component in place and React leaves the already-mounted <select>s
+              showing their pre-save values instead of the just-saved ones. */}
+          <SettingsForm key={`${user.name}-${user.defaultCurrency}-${user.theme}-${user.reflectionDay}`} user={user} />
         </CardContent>
       </Card>
     </div>

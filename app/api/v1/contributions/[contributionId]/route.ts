@@ -13,7 +13,6 @@ export async function DELETE(
   const { contributionId: rawContributionId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) return jsonError("Не авторизовано", 401);
 
   const contributionIdParsed = contributionIdSchema.safeParse(rawContributionId);
   if (!contributionIdParsed.success) return jsonError("Некорректные данные", 400);

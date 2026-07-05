@@ -42,7 +42,11 @@ function savedSubquery() {
   return db
     .select({
       goalId: contributions.goalId,
-      total: sum(contributions.amount).as("total"),
+      // Aliased uniquely (not "total") — Drizzle emits this derived table's
+      // column references unqualified in the outer SELECT, so a name shared
+      // with another joined subquery (checklistCountsSubquery's "total")
+      // causes a Postgres "column reference is ambiguous" error.
+      total: sum(contributions.amount).as("saved_total"),
     })
     .from(contributions)
     .where(isNull(contributions.deletedAt))
@@ -55,9 +59,9 @@ function checklistCountsSubquery() {
   return db
     .select({
       goalId: checklistItems.goalId,
-      total: count().as("total"),
+      total: count().as("checklist_total"),
       // count(expr) only counts non-null rows, so this yields the "done" count.
-      done: count(sql`CASE WHEN ${checklistItems.isDone} THEN 1 END`).as("done"),
+      done: count(sql`CASE WHEN ${checklistItems.isDone} THEN 1 END`).as("checklist_done"),
     })
     .from(checklistItems)
     .where(isNull(checklistItems.deletedAt))

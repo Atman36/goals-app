@@ -24,7 +24,6 @@ export type GoalActionResult =
 
 export type SimpleActionResult = { ok: true } | { ok: false; error: string };
 
-const GENERIC_AUTH_ERROR = "Не авторизовано";
 const GENERIC_NOT_FOUND_ERROR = "Цель не найдена";
 const GENERIC_VALIDATION_ERROR = "Проверьте поля формы";
 const GENERIC_INVALID_ID_ERROR = "Некорректные данные";
@@ -130,7 +129,6 @@ export async function createGoal(input: ClientGoalInput): Promise<GoalActionResu
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
   const parsed = goalSchema.safeParse(toDomainInput(input));
   if (!parsed.success) {
@@ -164,7 +162,6 @@ export async function updateGoal(
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
   const idCheck = goalIdSchema.safeParse(input.id);
   if (!idCheck.success) return { ok: false, error: GENERIC_INVALID_ID_ERROR };
@@ -211,7 +208,6 @@ export async function archiveGoal(goalId: string): Promise<SimpleActionResult> {
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
   const parsedId = goalIdSchema.safeParse(goalId);
   if (!parsedId.success) return { ok: false, error: GENERIC_INVALID_ID_ERROR };
@@ -242,7 +238,6 @@ export async function softDeleteGoalAction(goalId: string): Promise<SimpleAction
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
   const parsedId = goalIdSchema.safeParse(goalId);
   if (!parsedId.success) return { ok: false, error: GENERIC_INVALID_ID_ERROR };
@@ -263,7 +258,6 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: GENERIC_AUTH_ERROR };
 
   const parsedId = goalIdSchema.safeParse(goalId);
   if (!parsedId.success) return { ok: false, error: GENERIC_INVALID_ID_ERROR };

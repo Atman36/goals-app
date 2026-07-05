@@ -15,7 +15,6 @@ export async function GET(
   const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) return jsonError("Не авторизовано", 401);
 
   const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
   if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);
@@ -38,7 +37,6 @@ export async function POST(
   const { goalId: rawGoalId } = await params;
 
   const user = await getCurrentUser();
-  if (!user) return jsonError("Не авторизовано", 401);
 
   const goalIdParsed = goalIdSchema.safeParse(rawGoalId);
   if (!goalIdParsed.success) return jsonError("Некорректные данные", 400);

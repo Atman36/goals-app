@@ -22,7 +22,6 @@ export async function addComment(input: AddCommentInput): Promise<SimpleActionRe
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Не авторизовано" };
 
   const parsed = addCommentSchema.safeParse(input);
   if (!parsed.success) {
@@ -62,7 +61,6 @@ export async function deleteComment(goalId: string, commentId: string): Promise<
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Не авторизовано" };
 
   const parsed = deleteCommentSchema.safeParse({ goalId, commentId });
   if (!parsed.success) {

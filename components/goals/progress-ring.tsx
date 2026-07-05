@@ -35,8 +35,12 @@ export function ProgressRing({
         y={size / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        className="rotate-90 fill-foreground font-display text-[10px] font-bold"
-        style={{ transformOrigin: "center", transformBox: "fill-box" }}
+        className="rotate-90 fill-foreground font-display font-bold"
+        style={{
+          transformOrigin: "center",
+          transformBox: "fill-box",
+          fontSize: Math.round(size * 0.22),
+        }}
       >
         {Math.round(clamped * 100)}%
       </text>

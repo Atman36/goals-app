@@ -92,21 +92,24 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {rubTarget > 0n ? (
           <StatCard
-            label="₽"
-            value={`накоплено ${formatMoney(aggregates.byCurrency.RUB.saved, "RUB")} из ${formatMoney(rubTarget, "RUB")}`}
+            label="Накоплено · ₽"
+            hero={formatMoney(aggregates.byCurrency.RUB.saved, "RUB")}
+            sub={`из ${formatMoney(rubTarget, "RUB")}`}
             percent={Math.round(calcFinancialProgress(aggregates.byCurrency.RUB.saved, rubTarget) * 100)}
           />
         ) : null}
         {usdTarget > 0n ? (
           <StatCard
-            label="$"
-            value={`накоплено ${formatMoney(aggregates.byCurrency.USD.saved, "USD")} из ${formatMoney(usdTarget, "USD")}`}
+            label="Накоплено · $"
+            hero={formatMoney(aggregates.byCurrency.USD.saved, "USD")}
+            sub={`из ${formatMoney(usdTarget, "USD")}`}
             percent={Math.round(calcFinancialProgress(aggregates.byCurrency.USD.saved, usdTarget) * 100)}
           />
         ) : null}
         <StatCard
-          label="шаги"
-          value={`${aggregates.doneItems} из ${aggregates.totalItems}`}
+          label="Шаги · нефинансовые"
+          hero={`${aggregates.doneItems} из ${aggregates.totalItems}`}
+          sub="пройдено шагов"
           percent={stepsPercent}
         />
       </div>
@@ -137,12 +140,23 @@ export default async function DashboardPage({
   );
 }
 
-function StatCard({ label, value, percent }: { label: string; value: string; percent: number }) {
+function StatCard({
+  label,
+  hero,
+  sub,
+  percent,
+}: {
+  label: string;
+  hero: string;
+  sub: string;
+  percent: number;
+}) {
   return (
-    <div className="flex flex-col gap-2 rounded-[20px] bg-card p-4 ring-1 ring-foreground/8">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-display text-lg font-bold">{value}</span>
-      <Progress value={percent} aria-label={label} />
+    <div className="flex flex-col rounded-[20px] bg-card p-5 ring-1 ring-foreground/8">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <span className="mt-2 font-display text-[26px] leading-none font-bold tracking-tight">{hero}</span>
+      <span className="mt-1 text-xs text-muted-foreground">{sub}</span>
+      <Progress value={percent} aria-label={label} className="mt-3" />
     </div>
   );
 }

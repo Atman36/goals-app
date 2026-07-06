@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { ListChecks, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GoalForm } from "@/components/goals/goal-form";
+import { WizardConcordanceStep } from "@/components/goals/wizard-concordance-step";
+import { WizardWoopStep } from "@/components/goals/wizard-woop-step";
+import { createGoal } from "@/lib/actions/goals";
+import { registerMedia } from "@/lib/actions/media";
+import type { CoverUploadResult } from "@/components/goals/cover-upload";
+import type { ClientGoalInput } from "@/components/goals/goal-form-schema";
+import type { SelfConcordanceAnswers } from "@/lib/utils/concordance";
+import type { WoopInput } from "@/lib/validators/woop";
 import type { Currency } from "@/lib/validators/goal";
 
 type GoalKind = "financial" | "non_financial";
@@ -29,10 +38,64 @@ const KIND_CARDS: {
   },
 ];
 
-/** Step 0 (kind) → step 1 (lib/actions/goals.ts's createGoal, via GoalForm) —
- *  PRD §3.2. Steps 2–4 (self-concordance/WOOP/checklist) are Phase 2. */
+/** Step 0 (kind) → step 1 (basics via GoalForm, collected not submitted) →
+ *  step 2 (self-concordance check) → step 3 (WOOP; creates the goal via
+ *  lib/actions/goals.ts's createGoal with the composite payload) — PRD §3.2
+ *  Phase 2 "Методология v1". Creation is deferred to the wizard's end so
+ *  goal_created's has_woop/has_concordance flags are truthful. No checklist
+ *  step (not in the Phase 2 PRD §9 list). */
 export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [kind, setKind] = useState<GoalKind | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [basics, setBasics] = useState<{
+    values: ClientGoalInput;
+    cover: CoverUploadResult | null;
+  } | null>(null);
+  const [concordance, setConcordance] = useState<SelfConcordanceAnswers | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  function handleCollectBasics(values: ClientGoalInput, stagedCover: CoverUploadResult | null) {
+    setBasics({ values, cover: stagedCover });
+    setStep(2);
+  }
+
+  function handleConcordanceNext(answers: SelfConcordanceAnswers | null) {
+    setConcordance(answers);
+    setStep(3);
+  }
+
+  function handleCreate(woop: WoopInput | null) {
+    if (!basics) return;
+    setCreateError(null);
+
+    startTransition(async () => {
+      const result = await createGoal({
+        ...basics.values,
+        selfConcordance: concordance ?? undefined,
+        woop: woop ?? undefined,
+      });
+
+      if (!result.ok) {
+        setCreateError(result.error);
+        return;
+      }
+
+      if (basics.cover) {
+        await registerMedia({
+          goalId: result.goalId,
+          path: basics.cover.path,
+          setAsCover: true,
+        });
+      }
+
+      // Both create and edit land on the goal page (PRD §3.2) — the action
+      // already called revalidatePath for it, so this navigation picks up
+      // fresh data.
+      router.push(`/goals/${result.goalId}`);
+    });
+  }
 
   if (!kind) {
     return (
@@ -66,15 +129,29 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="ghost"
-        className="self-start"
-        onClick={() => setKind(null)}
-      >
-        ← Назад
-      </Button>
-      <GoalForm mode="create" kind={kind} defaultCurrency={defaultCurrency} />
+      {step === 1 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          className="self-start"
+          onClick={() => setKind(null)}
+        >
+          ← Назад
+        </Button>
+      ) : null}
+
+      {step === 1 ? (
+        <GoalForm
+          mode="create"
+          kind={kind}
+          defaultCurrency={defaultCurrency}
+          onCollect={handleCollectBasics}
+        />
+      ) : step === 2 ? (
+        <WizardConcordanceStep onNext={handleConcordanceNext} />
+      ) : (
+        <WizardWoopStep pending={isPending} error={createError} onCreate={handleCreate} />
+      )}
     </div>
   );
 }

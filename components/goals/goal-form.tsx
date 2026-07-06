@@ -17,7 +17,15 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type GoalFormProps =
-  | { mode: "create"; kind: "financial" | "non_financial"; defaultCurrency: Currency }
+  | {
+      mode: "create";
+      kind: "financial" | "non_financial";
+      defaultCurrency: Currency;
+      /** When provided (wizard-create flow), the form validates then hands
+       *  values up instead of calling createGoal itself — the wizard defers
+       *  actual creation to its final step (PRD §3.2, T11). */
+      onCollect?: (values: ClientGoalInput, stagedCover: CoverUploadResult | null) => void;
+    }
   | { mode: "edit"; goal: GoalWithProgress; currencyLocked: boolean; initialCoverUrl?: string };
 
 export function GoalForm(props: GoalFormProps) {
@@ -67,6 +75,11 @@ export function GoalForm(props: GoalFormProps) {
 
   const onSubmit = handleSubmit((values) => {
     setFormError(undefined);
+
+    if (props.mode === "create" && props.onCollect) {
+      props.onCollect(values, pendingCover ?? null);
+      return;
+    }
 
     startTransition(async () => {
       const result =
@@ -196,7 +209,13 @@ export function GoalForm(props: GoalFormProps) {
       {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={isPending}>
-        {isPending ? "Сохраняем…" : props.mode === "edit" ? "Сохранить" : "Создать цель"}
+        {isPending
+          ? "Сохраняем…"
+          : props.mode === "edit"
+            ? "Сохранить"
+            : props.onCollect
+              ? "Далее"
+              : "Создать цель"}
       </Button>
     </form>
   );

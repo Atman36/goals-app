@@ -44,6 +44,9 @@ export type AnalyticsEvent = CommonProps &
         is_negative: boolean;
       }
     | {
+        name: "woop_completed";
+      }
+    | {
         name: "checklist_item_added";
         kind: ChecklistItemKind;
       }

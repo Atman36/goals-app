@@ -175,5 +175,6 @@ export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type MediaItem = typeof mediaItems.$inferSelect;
 export type WoopEntry = typeof woopEntries.$inferSelect;
+export type NewWoopEntry = typeof woopEntries.$inferInsert;
 export type Reflection = typeof reflections.$inferSelect;
 export type FxRate = typeof fxRates.$inferSelect;

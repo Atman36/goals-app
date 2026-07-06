@@ -11,9 +11,12 @@ import {
   hasContributions,
   type GoalWithProgress,
 } from "@/lib/db/queries/goals";
+import { insertWoopEntry } from "@/lib/db/queries/woop";
 import type { NewGoal } from "@/lib/db/schema";
 import { goalSchema, goalUpdateSchema, goalIdSchema, type GoalInput } from "@/lib/validators/goal";
+import { woopInputSchema, type WoopInput } from "@/lib/validators/woop";
 import { toMinorUnits, calcFinancialProgress } from "@/lib/utils/money";
+import type { SelfConcordanceAnswers } from "@/lib/utils/concordance";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import type { ClientGoalInput } from "@/components/goals/goal-form-schema";
@@ -46,7 +49,7 @@ function parseAmountMajor(value: string | undefined): number | null {
  *  date string) into the shape lib/validators/goal.ts's `goalSchema` expects
  *  (bigint minor units) — client validation is UX only, this + the
  *  goalSchema.safeParse below is the real gate. */
-function toDomainInput(input: ClientGoalInput) {
+function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcordanceAnswers }) {
   if (input.kind === "financial") {
     const target = parseAmountMajor(input.targetAmountMajor);
     const initial = input.initialAmountMajor ? parseAmountMajor(input.initialAmountMajor) : 0;
@@ -61,6 +64,7 @@ function toDomainInput(input: ClientGoalInput) {
       // fails validation cleanly (targetAmount is a required positive bigint).
       targetAmount: target === null ? undefined : toMinorUnits(target),
       initialAmount: initial === null ? undefined : toMinorUnits(initial),
+      selfConcordance: input.selfConcordance,
     };
   }
 
@@ -76,6 +80,7 @@ function toDomainInput(input: ClientGoalInput) {
     currency: undefined,
     targetAmount: undefined,
     initialAmount: undefined,
+    selfConcordance: input.selfConcordance,
   };
 }
 
@@ -91,6 +96,13 @@ function toInsertValues(data: GoalInput): Omit<NewGoal, "userId"> {
     title: data.title,
     description: data.description ?? null,
     deadline: toDbDeadline(data.deadline),
+    // Explicit `undefined` (not `?? null`) so an edit-mode update — which
+    // never carries selfConcordance (see toDomainInput's caller in
+    // updateGoal) — leaves the column untouched rather than nulling out a
+    // previously-saved concordance answer (drizzle's `.set()` drops
+    // undefined-valued keys; a plain insert falls back to the column
+    // default/NULL for them).
+    selfConcordance: data.selfConcordance,
   };
 
   if (data.kind === "financial") {
@@ -125,7 +137,9 @@ function calcProgressPct(goal: GoalWithProgress): number {
   return goal.manualProgress ?? 0;
 }
 
-export async function createGoal(input: ClientGoalInput): Promise<GoalActionResult> {
+export async function createGoal(
+  input: ClientGoalInput & { selfConcordance?: SelfConcordanceAnswers; woop?: WoopInput },
+): Promise<GoalActionResult> {
   const log = withRequestId(crypto.randomUUID());
 
   const user = await getCurrentUser();
@@ -136,7 +150,22 @@ export async function createGoal(input: ClientGoalInput): Promise<GoalActionResu
     return { ok: false, error: GENERIC_VALIDATION_ERROR };
   }
 
+  const woopParsed = woopInputSchema.optional().safeParse(input.woop);
+  if (!woopParsed.success) {
+    log.warn({ issues: woopParsed.error.issues }, "createGoal: woop validation failed");
+    return { ok: false, error: GENERIC_VALIDATION_ERROR };
+  }
+
   const goal = await insertGoal(user.id, toInsertValues(parsed.data));
+
+  let hasWoop = false;
+  if (woopParsed.data) {
+    const woopEntry = await insertWoopEntry(user.id, goal.id, woopParsed.data);
+    if (woopEntry) {
+      hasWoop = true;
+      track({ name: "woop_completed", goal_id: goal.id });
+    }
+  }
 
   track({
     name: "goal_created",
@@ -144,8 +173,8 @@ export async function createGoal(input: ClientGoalInput): Promise<GoalActionResu
     goal_kind: goal.kind,
     currency: goal.currency ?? undefined,
     kind: goal.kind,
-    has_woop: false,
-    has_concordance: false,
+    has_woop: hasWoop,
+    has_concordance: goal.selfConcordance != null,
     checklist_size: 0,
   });
   log.info({ goalId: goal.id, kind: goal.kind }, "goal created");

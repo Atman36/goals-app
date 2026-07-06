@@ -12,6 +12,7 @@ import { calcRequiredWeeklyItemPace } from "@/lib/utils/pace";
 import { pluralRu } from "@/lib/utils/plural";
 import { cn } from "@/lib/utils";
 import type { ChecklistItem } from "@/lib/db/schema";
+import type { IfThenPlan } from "@/lib/validators/checklist";
 
 type GoalKind = "financial" | "non_financial";
 type ChecklistKind = "action" | "document" | "purchase" | "agreement" | "if_then";
@@ -24,8 +25,17 @@ const KIND_LABEL: Record<ChecklistKind, string> = {
   if_then: "Если-то",
 };
 
-// Structured if-then form is Phase 2 — MVP only offers these 4 plain kinds.
-const MVP_KINDS: ChecklistKind[] = ["action", "document", "purchase", "agreement"];
+// All 5 kinds are offered — structured if-then plans shipped in Phase 2 (T13).
+const CHECKLIST_KINDS: ChecklistKind[] = ["action", "document", "purchase", "agreement", "if_then"];
+
+const PLAN_TYPE_LABEL: Record<IfThenPlan["planType"], string> = {
+  initiation: "Инициация",
+  maintenance: "Сохранение курса",
+  relapse_prevention: "Защита от срыва",
+};
+
+const SELECT_CLASSNAME =
+  "h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export interface ClientChecklistItem {
   id: string;
@@ -33,6 +43,7 @@ export interface ClientChecklistItem {
   note: string | null;
   dueDate: string | null;
   kind: ChecklistKind;
+  ifThen: IfThenPlan | null;
   isDone: boolean;
 }
 
@@ -42,6 +53,7 @@ interface ChecklistApiItem {
   note: string | null;
   dueDate: string | null;
   kind: ChecklistKind;
+  ifThen: IfThenPlan | null;
   isDone: boolean;
 }
 
@@ -56,6 +68,7 @@ function toClientItem(row: ChecklistItem): ClientChecklistItem {
     note: row.note,
     dueDate: row.dueDate,
     kind: row.kind,
+    ifThen: row.ifThen,
     isDone: row.isDone,
   };
 }
@@ -70,6 +83,7 @@ async function fetchChecklist(goalId: string): Promise<ClientChecklistItem[]> {
     note: row.note,
     dueDate: row.dueDate,
     kind: row.kind,
+    ifThen: row.ifThen,
     isDone: row.isDone,
   }));
 }
@@ -147,6 +161,9 @@ export function ChecklistBlock({
   const [kind, setKind] = useState<ChecklistKind>("action");
   const [note, setNote] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [ifThenTrigger, setIfThenTrigger] = useState("");
+  const [ifThenAction, setIfThenAction] = useState("");
+  const [ifThenPlanType, setIfThenPlanType] = useState<IfThenPlan["planType"]>("initiation");
   const [formError, setFormError] = useState<string | undefined>();
 
   const total = items.length;
@@ -179,7 +196,13 @@ export function ChecklistBlock({
   });
 
   const addMutation = useMutation({
-    mutationFn: async (input: { title: string; kind: ChecklistKind; note?: string; dueDate?: string }) => {
+    mutationFn: async (input: {
+      title: string;
+      kind: ChecklistKind;
+      note?: string;
+      dueDate?: string;
+      ifThen?: IfThenPlan;
+    }) => {
       const res = await fetch(`/api/v1/goals/${goalId}/checklist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -197,6 +220,7 @@ export function ChecklistBlock({
           note: result.data.note,
           dueDate: result.data.dueDate,
           kind: result.data.kind,
+          ifThen: result.data.ifThen,
           isDone: result.data.isDone,
         },
       ]);
@@ -204,6 +228,9 @@ export function ChecklistBlock({
       setNote("");
       setDueDate("");
       setKind("action");
+      setIfThenTrigger("");
+      setIfThenAction("");
+      setIfThenPlanType("initiation");
       setFormError(undefined);
     },
     onError: () => setFormError("Не удалось добавить пункт. Попробуйте ещё раз."),
@@ -237,11 +264,19 @@ export function ChecklistBlock({
       setFormError("Введите название шага");
       return;
     }
+    if (kind === "if_then" && (!ifThenTrigger.trim() || !ifThenAction.trim())) {
+      setFormError("Заполните «Если…» и «То я…»");
+      return;
+    }
     addMutation.mutate({
       title: title.trim(),
       kind,
       note: note.trim() || undefined,
       dueDate: dueDate || undefined,
+      ifThen:
+        kind === "if_then"
+          ? { trigger: ifThenTrigger.trim(), action: ifThenAction.trim(), planType: ifThenPlanType }
+          : undefined,
     });
   }
 
@@ -280,6 +315,17 @@ export function ChecklistBlock({
               <div className="flex flex-1 flex-col">
                 <span className={cn(item.isDone && "text-muted-foreground line-through")}>{item.title}</span>
                 {item.note ? <span className="text-xs text-muted-foreground">{item.note}</span> : null}
+                {item.kind === "if_then" && item.ifThen ? (
+                  <>
+                    <span className="text-xs font-medium text-muted-foreground">{KIND_LABEL.if_then}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Если {item.ifThen.trigger} → то я {item.ifThen.action}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground/80">
+                      {PLAN_TYPE_LABEL[item.ifThen.planType]}
+                    </span>
+                  </>
+                ) : null}
               </div>
               {item.dueDate ? (
                 <span className="shrink-0 text-xs text-muted-foreground">
@@ -303,7 +349,7 @@ export function ChecklistBlock({
       <form onSubmit={handleAddSubmit} className="flex flex-col gap-2 rounded-2xl bg-muted/50 p-3">
         <div className="flex gap-2">
           <Input
-            placeholder="Новый шаг"
+            placeholder={kind === "if_then" ? "Название плана" : "Новый шаг"}
             aria-label="Название шага"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -312,10 +358,18 @@ export function ChecklistBlock({
           <select
             aria-label="Тип шага"
             value={kind}
-            onChange={(e) => setKind(e.target.value as ChecklistKind)}
-            className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            onChange={(e) => {
+              const nextKind = e.target.value as ChecklistKind;
+              setKind(nextKind);
+              if (nextKind !== "if_then") {
+                setIfThenTrigger("");
+                setIfThenAction("");
+                setIfThenPlanType("initiation");
+              }
+            }}
+            className={SELECT_CLASSNAME}
           >
-            {MVP_KINDS.map((k) => (
+            {CHECKLIST_KINDS.map((k) => (
               <option key={k} value={k}>
                 {KIND_LABEL[k]}
               </option>
@@ -338,6 +392,32 @@ export function ChecklistBlock({
             className="w-40"
           />
         </div>
+        {kind === "if_then" ? (
+          <div className="flex flex-col gap-2">
+            <Input
+              placeholder="триггер: ситуация, время или чувство"
+              aria-label="Если…"
+              value={ifThenTrigger}
+              onChange={(e) => setIfThenTrigger(e.target.value)}
+            />
+            <Input
+              placeholder="конкретное действие"
+              aria-label="То я…"
+              value={ifThenAction}
+              onChange={(e) => setIfThenAction(e.target.value)}
+            />
+            <select
+              aria-label="Тип плана"
+              value={ifThenPlanType}
+              onChange={(e) => setIfThenPlanType(e.target.value as IfThenPlan["planType"])}
+              className={SELECT_CLASSNAME}
+            >
+              <option value="initiation">{PLAN_TYPE_LABEL.initiation}</option>
+              <option value="maintenance">{PLAN_TYPE_LABEL.maintenance}</option>
+              <option value="relapse_prevention">{PLAN_TYPE_LABEL.relapse_prevention}</option>
+            </select>
+          </div>
+        ) : null}
         {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
         <Button type="submit" variant="outline" className="self-start" disabled={addMutation.isPending}>
           <Plus className="size-4" /> Добавить шаг

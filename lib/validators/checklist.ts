@@ -14,6 +14,8 @@ export const ifThenPlanSchema = z.object({
   planType: z.enum(["initiation", "maintenance", "relapse_prevention"]),
 });
 
+export type IfThenPlan = z.infer<typeof ifThenPlanSchema>;
+
 export const checklistItemSchema = z.object({
   goalId: z.uuid(),
   title: z.string().trim().min(1).max(200),
@@ -38,13 +40,22 @@ export const checklistItemIdSchema = z.uuid();
 // from the route param before it can validate.
 export const checklistPatchBodySchema = z.object({ isDone: z.boolean() });
 
-// Structured if-then form is Phase 2 (PRD facts, T8 spec) — MVP only accepts
-// these 4 plain kinds from the client.
-const MVP_KINDS = ["action", "document", "purchase", "agreement"] as const;
-
-export const checklistPostBodySchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  kind: z.enum(MVP_KINDS).optional(),
-  note: z.string().max(2000).optional(),
-  dueDate: z.coerce.date().optional(),
-});
+// Structured if-then plans shipped in Phase 2 (T13) — the wire schema accepts
+// all 5 kinds now; kind === "if_then" requires a structured ifThen plan, and
+// every other kind must leave it unset.
+export const checklistPostBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    kind: checklistItemKindSchema.optional(),
+    note: z.string().max(2000).optional(),
+    dueDate: z.coerce.date().optional(),
+    ifThen: ifThenPlanSchema.optional(),
+  })
+  .refine((data) => (data.kind ?? "action") !== "if_then" || !!data.ifThen, {
+    message: "if_then items require an if-then plan",
+    path: ["ifThen"],
+  })
+  .refine((data) => (data.kind ?? "action") === "if_then" || data.ifThen === undefined, {
+    message: "ifThen is only valid for if_then items",
+    path: ["ifThen"],
+  });

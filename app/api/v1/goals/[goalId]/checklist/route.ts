@@ -58,6 +58,7 @@ export async function POST(
     note: bodyParsed.data.note,
     dueDate: bodyParsed.data.dueDate,
     kind: bodyParsed.data.kind ?? "action",
+    ifThen: bodyParsed.data.ifThen,
   });
   if (!parsed.success) {
     log.warn({ issues: parsed.error.issues }, "checklist POST: validation failed");
@@ -70,6 +71,7 @@ export async function POST(
     note: parsed.data.note ?? null,
     dueDate: parsed.data.dueDate ? parsed.data.dueDate.toISOString().slice(0, 10) : null,
     kind: parsed.data.kind,
+    ifThen: parsed.data.ifThen ?? null,
   });
   if (!created) return jsonError("Цель не найдена", 404);
 

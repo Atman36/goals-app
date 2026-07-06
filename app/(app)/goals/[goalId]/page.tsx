@@ -8,6 +8,7 @@ import { listContributions } from "@/lib/db/queries/contributions";
 import { listChecklistItems } from "@/lib/db/queries/checklist";
 import { listComments } from "@/lib/db/queries/comments";
 import { listMediaByGoal } from "@/lib/db/queries/media";
+import { getWoopByGoal } from "@/lib/db/queries/woop";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { formatMoney } from "@/lib/utils/money";
 import { pluralRu } from "@/lib/utils/plural";
@@ -19,6 +20,7 @@ import { ContributionHistory } from "@/components/goals/contribution-history";
 import { ChecklistBlock, ChecklistProgressHeader } from "@/components/goals/checklist-block";
 import { CommentsBlock, type CommentWithPhotoUrl } from "@/components/goals/comments-block";
 import { GoalGallery, type GalleryImage } from "@/components/goals/goal-gallery";
+import { WoopBlock } from "@/components/goals/woop-block";
 
 // PRD §3.3: a goal's page — progress ring, idempotent quick-add, checklist,
 // history, comments, gallery. Server component fetching everything up front;
@@ -42,10 +44,11 @@ export default async function GoalPage({
   const isFinancial = goal.kind === "financial";
 
   const contributions = isFinancial ? await listContributions(user.id, goalId) : [];
-  const [checklistItems, comments, media] = await Promise.all([
+  const [checklistItems, comments, media, woop] = await Promise.all([
     listChecklistItems(user.id, goalId),
     listComments(user.id, goalId),
     listMediaByGoal(user.id, goalId),
+    getWoopByGoal(user.id, goalId),
   ]);
 
   const mediaWithUrls = await Promise.all(
@@ -156,6 +159,8 @@ export default async function GoalPage({
       ) : (
         <ChecklistBlock goalId={goal.id} goalKind={goal.kind} initialItems={checklistItems} />
       )}
+
+      <WoopBlock goalId={goal.id} initialWoop={woop} />
 
       <CommentsBlock goalId={goal.id} comments={commentsWithPhotos} />
 

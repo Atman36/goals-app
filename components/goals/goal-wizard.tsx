@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { addDays, format } from "date-fns";
 import { ListChecks, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import type { ClientGoalInput } from "@/components/goals/goal-form-schema";
 import type { SelfConcordanceAnswers } from "@/lib/utils/concordance";
 import type { WoopInput } from "@/lib/validators/woop";
 import type { Currency } from "@/lib/validators/goal";
+import type { GoalTemplate } from "@/lib/goal-templates";
 
 type GoalKind = "financial" | "non_financial";
 
@@ -43,11 +45,22 @@ const KIND_CARDS: {
  *  lib/actions/goals.ts's createGoal with the composite payload) — PRD §3.2
  *  Phase 2 "Методология v1". Creation is deferred to the wizard's end so
  *  goal_created's has_woop/has_concordance flags are truthful. No checklist
- *  step (not in the Phase 2 PRD §9 list). */
-export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
+ *  step (not in the Phase 2 PRD §9 list).
+ *
+ *  T5: when `template` is passed (from `/goals/new?template=<slug>`), the
+ *  kind is fixed and step 0 is skipped, GoalForm is pre-filled from the
+ *  template, and a starter checklist is seeded (best-effort) right after the
+ *  goal is created. */
+export function GoalWizard({
+  defaultCurrency,
+  template,
+}: {
+  defaultCurrency: Currency;
+  template?: GoalTemplate;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [kind, setKind] = useState<GoalKind | null>(null);
+  const [kind, setKind] = useState<GoalKind | null>(template?.kind ?? null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [basics, setBasics] = useState<{
     values: ClientGoalInput;
@@ -55,6 +68,18 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
   } | null>(null);
   const [concordance, setConcordance] = useState<SelfConcordanceAnswers | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Template prefill for GoalForm — deadline suggestion = today + the
+  // template's offset (T5 decision), computed once per template on the
+  // browser clock, not stored in the template itself.
+  const templateInitialValues = useMemo(() => {
+    if (!template) return undefined;
+    return {
+      title: template.titleSuggestion,
+      description: template.description,
+      deadline: format(addDays(new Date(), template.deadlineOffsetDays), "yyyy-MM-dd"),
+    };
+  }, [template]);
 
   function handleCollectBasics(values: ClientGoalInput, stagedCover: CoverUploadResult | null) {
     setBasics({ values, cover: stagedCover });
@@ -64,6 +89,32 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
   function handleConcordanceNext(answers: SelfConcordanceAnswers | null) {
     setConcordance(answers);
     setStep(3);
+  }
+
+  // Best-effort starter-checklist seeding: goal creation is the critical
+  // path, so a failed POST is swallowed per-item and never blocks the
+  // final navigation (T5 decision).
+  async function seedStarterChecklist(goalId: string) {
+    if (!template || template.starterChecklist.length === 0) return;
+
+    for (const item of template.starterChecklist) {
+      try {
+        const res = await fetch(`/api/v1/goals/${goalId}/checklist`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: item.title,
+            kind: item.kind,
+            ifThen: item.ifThen,
+          }),
+        });
+        if (!res.ok) {
+          console.error("Не удалось создать пункт чек-листа из шаблона", item.title, res.status);
+        }
+      } catch (err) {
+        console.error("Не удалось создать пункт чек-листа из шаблона", item.title, err);
+      }
+    }
   }
 
   function handleCreate(woop: WoopInput | null) {
@@ -89,6 +140,8 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
           setAsCover: true,
         });
       }
+
+      await seedStarterChecklist(result.goalId);
 
       // Both create and edit land on the goal page (PRD §3.2) — the action
       // already called revalidatePath for it, so this navigation picks up
@@ -129,7 +182,7 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {step === 1 ? (
+      {step === 1 && !template ? (
         <Button
           type="button"
           variant="ghost"
@@ -146,6 +199,7 @@ export function GoalWizard({ defaultCurrency }: { defaultCurrency: Currency }) {
           kind={kind}
           defaultCurrency={defaultCurrency}
           onCollect={handleCollectBasics}
+          initialValues={templateInitialValues}
         />
       ) : step === 2 ? (
         <WizardConcordanceStep onNext={handleConcordanceNext} />

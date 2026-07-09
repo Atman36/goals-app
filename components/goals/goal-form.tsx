@@ -25,6 +25,11 @@ type GoalFormProps =
        *  values up instead of calling createGoal itself — the wizard defers
        *  actual creation to its final step (PRD §3.2, T11). */
       onCollect?: (values: ClientGoalInput, stagedCover: CoverUploadResult | null) => void;
+      /** T5 template prefill — only the fields templates suggest. Merged
+       *  over the hardcoded create defaults below (template values win);
+       *  never prefills targetAmount, so financial goals still require the
+       *  user to enter their own amount. */
+      initialValues?: Partial<{ title: string; description: string; deadline: string }>;
     }
   | { mode: "edit"; goal: GoalWithProgress; currencyLocked: boolean; initialCoverUrl?: string };
 
@@ -51,9 +56,9 @@ export function GoalForm(props: GoalFormProps) {
         }
       : {
           kind: props.kind,
-          title: "",
-          description: "",
-          deadline: "",
+          title: props.initialValues?.title ?? "",
+          description: props.initialValues?.description ?? "",
+          deadline: props.initialValues?.deadline ?? "",
           currencySymbol: props.kind === "financial" ? props.defaultCurrency : undefined,
           targetAmountMajor: "",
           initialAmountMajor: "0",

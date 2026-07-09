@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Мои цели" },
+  { href: "/review", label: "Обзор" },
   { href: "/gallery", label: "Галерея" },
   { href: "/settings", label: "Настройки" },
 ];

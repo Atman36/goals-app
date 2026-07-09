@@ -39,6 +39,7 @@ export const users = pgTable("users", {
   defaultCurrency: currencyEnum("default_currency").notNull().default("RUB"),
   theme: themeEnum("theme").notNull().default("light"),
   reflectionDay: smallint("reflection_day"), // 0=Sunday..6=Saturday
+  focusGoalId: uuid("focus_goal_id"), // FK to goals.id, enforced at query layer (soft-delete only, circular)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

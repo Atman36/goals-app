@@ -15,6 +15,13 @@
       "when": 1783105125995,
       "tag": "0001_rls_and_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783619303190,
+      "tag": "0002_focus_goal",
+      "breakpoints": true
     }
   ]
 }

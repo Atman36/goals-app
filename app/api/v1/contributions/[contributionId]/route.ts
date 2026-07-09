@@ -30,7 +30,8 @@ export async function DELETE(
   const goal = await getGoalWithDetails(user.id, parsedQuery.data.goalId);
   if (!goal) return jsonError("Цель не найдена", 404);
 
-  await softDeleteContribution(user.id, contributionId);
+  const deleted = await softDeleteContribution(user.id, parsedQuery.data.goalId, contributionId);
+  if (!deleted) return jsonError("Взнос не найден", 404);
 
   const updatedGoal = await getGoalWithDetails(user.id, parsedQuery.data.goalId);
   log.info({ goalId: parsedQuery.data.goalId, contributionId }, "contribution soft-deleted");

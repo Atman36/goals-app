@@ -46,14 +46,16 @@ export async function insertContributionIdempotent(
 
 export async function softDeleteContribution(
   userId: string,
+  goalId: string,
   contributionId: string,
-): Promise<void> {
-  await db
+): Promise<Contribution | null> {
+  const [row] = await db
     .update(contributions)
     .set({ deletedAt: new Date() })
     .where(
       and(
         eq(contributions.id, contributionId),
+        eq(contributions.goalId, goalId),
         isNull(contributions.deletedAt),
         exists(
           db
@@ -68,5 +70,7 @@ export async function softDeleteContribution(
             ),
         ),
       ),
-    );
+    )
+    .returning();
+  return row ?? null;
 }

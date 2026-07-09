@@ -39,3 +39,7 @@ export async function updateUserProfile(
   const [row] = await db.update(users).set(values).where(eq(users.id, id)).returning();
   return row ?? null;
 }
+
+export async function setUserFocusGoal(userId: string, goalId: string | null): Promise<void> {
+  await db.update(users).set({ focusGoalId: goalId }).where(eq(users.id, userId));
+}

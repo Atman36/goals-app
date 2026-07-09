@@ -2,7 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
+import { Star } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { calcFinancialProgress, formatMoney } from "@/lib/utils/money";
 import type { GoalWithProgress } from "@/lib/db/queries/goals";
@@ -34,7 +36,7 @@ async function resolveCoverUrl(storagePath: string | null): Promise<string | nul
   }
 }
 
-export async function GoalCard({ goal }: { goal: GoalWithProgress }) {
+export async function GoalCard({ goal, isFocus }: { goal: GoalWithProgress; isFocus?: boolean }) {
   const coverUrl = await resolveCoverUrl(goal.coverStoragePath);
   const isFinancial = goal.kind === "financial";
   const isAchieved = goal.status === "achieved";
@@ -71,6 +73,11 @@ export async function GoalCard({ goal }: { goal: GoalWithProgress }) {
       </Link>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
+        {isFocus ? (
+          <Badge variant="secondary" className="w-fit">
+            <Star className="text-primary" /> Цель №1
+          </Badge>
+        ) : null}
         <Link href={`/goals/${goal.id}`}>
           <h3 className="text-lg leading-snug font-extrabold text-foreground">{goal.title}</h3>
         </Link>

@@ -21,6 +21,7 @@ import { ChecklistBlock, ChecklistProgressHeader } from "@/components/goals/chec
 import { CommentsBlock, type CommentWithPhotoUrl } from "@/components/goals/comments-block";
 import { GoalGallery, type GalleryImage } from "@/components/goals/goal-gallery";
 import { WoopBlock } from "@/components/goals/woop-block";
+import { FocusToggle } from "@/components/goals/focus-toggle";
 
 // PRD §3.3: a goal's page — progress ring, idempotent quick-add, checklist,
 // history, comments, gallery. Server component fetching everything up front;
@@ -75,6 +76,7 @@ export default async function GoalPage({
   });
 
   const deadlineLabel = format(parseISO(goal.deadline), "d MMMM yyyy", { locale: ru });
+  const isFocus = user.focusGoalId === goal.id;
 
   // Celebration screen (?celebrate=1 after marking achieved) — PRD §9 Phase 2.
   const showCelebration = sp.celebrate === "1" && goal.status === "achieved";
@@ -98,6 +100,7 @@ export default async function GoalPage({
           <h1 className="font-display text-[36px] leading-tight font-bold tracking-tight">{goal.title}</h1>
         </div>
         <div className="flex items-center gap-2">
+          {goal.status === "active" ? <FocusToggle goalId={goal.id} isFocus={isFocus} /> : null}
           <Button
             variant="outline"
             nativeButton={false}

@@ -132,7 +132,7 @@ export default async function DashboardPage({
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {goals.map((goal) => (
-            <GoalCard key={goal.id} goal={goal} />
+            <GoalCard key={goal.id} goal={goal} isFocus={goal.id === user.focusGoalId} />
           ))}
         </div>
       )}

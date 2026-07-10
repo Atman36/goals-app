@@ -9,6 +9,7 @@ import { listChecklistItems } from "@/lib/db/queries/checklist";
 import { listComments } from "@/lib/db/queries/comments";
 import { listMediaByGoal } from "@/lib/db/queries/media";
 import { getWoopByGoal } from "@/lib/db/queries/woop";
+import { getGoalStreak } from "@/lib/db/queries/streaks";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { formatMoney } from "@/lib/utils/money";
 import { pluralRu } from "@/lib/utils/plural";
@@ -22,6 +23,7 @@ import { CommentsBlock, type CommentWithPhotoUrl } from "@/components/goals/comm
 import { GoalGallery, type GalleryImage } from "@/components/goals/goal-gallery";
 import { WoopBlock } from "@/components/goals/woop-block";
 import { FocusToggle } from "@/components/goals/focus-toggle";
+import { StreakBadge } from "@/components/goals/streak-badge";
 
 // PRD §3.3: a goal's page — progress ring, idempotent quick-add, checklist,
 // history, comments, gallery. Server component fetching everything up front;
@@ -45,11 +47,12 @@ export default async function GoalPage({
   const isFinancial = goal.kind === "financial";
 
   const contributions = isFinancial ? await listContributions(user.id, goalId) : [];
-  const [checklistItems, comments, media, woop] = await Promise.all([
+  const [checklistItems, comments, media, woop, streak] = await Promise.all([
     listChecklistItems(user.id, goalId),
     listComments(user.id, goalId),
     listMediaByGoal(user.id, goalId),
     getWoopByGoal(user.id, goalId),
+    getGoalStreak(user.id, goalId),
   ]);
 
   const mediaWithUrls = await Promise.all(
@@ -136,6 +139,8 @@ export default async function GoalPage({
             до {deadlineLabel}
             {goal.status === "achieved" ? " · Достигнута 🎉" : ""}
           </p>
+
+          <StreakBadge weeks={streak} className="self-start" />
 
           {isFinancial ? (
             <QuickAddSheet

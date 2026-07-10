@@ -9,11 +9,13 @@ import {
   type ChecklistStepDue,
   type GoalDeadline,
 } from "@/lib/db/queries/agenda";
+import { getGlobalStreak } from "@/lib/db/queries/streaks";
 import { todayKey } from "@/lib/utils/date-keys";
 import { classifyDue, formatDueLabelRu, type DueBucket } from "@/lib/utils/reminders";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/goals/empty-state";
 import { GoalCard } from "@/components/goals/goal-card";
+import { StreakBadge } from "@/components/goals/streak-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -86,10 +88,11 @@ function DeadlineRow({ goal, today }: { goal: GoalDeadline; today: string }) {
 export default async function TodayPage() {
   const user = await getCurrentUser();
 
-  const [focusGoal, steps, deadlines] = await Promise.all([
+  const [focusGoal, steps, deadlines, streak] = await Promise.all([
     getFocusGoal(user.id),
     listOverdueAndUpcomingSteps(user.id, 7),
     listGoalsByDeadline(user.id, 14),
+    getGlobalStreak(user.id),
   ]);
 
   const today = todayKey();
@@ -103,6 +106,7 @@ export default async function TodayPage() {
       <div className="flex flex-col gap-1">
         <h1 className="font-display text-2xl font-bold tracking-tight">Сегодня</h1>
         <p className="text-sm text-muted-foreground">Что сделать сегодня по всем активным целям</p>
+        <StreakBadge weeks={streak} className="mt-2 self-start" />
       </div>
 
       {isEmpty ? (

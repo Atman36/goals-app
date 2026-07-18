@@ -11,6 +11,7 @@ import {
   date,
   timestamp,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // --- Enums ---------------------------------------------------------------
@@ -27,6 +28,7 @@ export const checklistItemKindEnum = pgEnum("checklist_item_kind", [
   "if_then",
 ]);
 export const fxSourceEnum = pgEnum("fx_source", ["cbr", "manual"]);
+export const checkinOutcomeEnum = pgEnum("checkin_outcome", ["done", "partial", "skipped"]);
 
 // --- Tables ----------------------------------------------------------------
 // Money is always bigint in minor units (kopecks/cents) — see PRD §4/§7.
@@ -143,6 +145,28 @@ export const woopEntries = pgTable("woop_entries", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Daily emotion check-in for a goal — growth-reactor v5 §5/§6/§12. Goal-child
+// table (no user_id; ownership via goals.user_id, same as contributions/
+// checklistItems/comments/mediaItems). One row per (goal_id, date) — see the
+// unique index below and the upsert in lib/db/queries/checkins.ts.
+export const checkins = pgTable(
+  "checkins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    goalId: uuid("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    outcome: checkinOutcomeEnum("outcome").notNull(),
+    feeling: smallint("feeling").notNull(), // 1-5; range enforced by a DB CHECK (see drizzle/0003_checkins.sql)
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [uniqueIndex("checkins_goal_date_unique").on(table.goalId, table.date)],
+);
+
 // P2
 export const reflections = pgTable("reflections", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -177,5 +201,7 @@ export type Comment = typeof comments.$inferSelect;
 export type MediaItem = typeof mediaItems.$inferSelect;
 export type WoopEntry = typeof woopEntries.$inferSelect;
 export type NewWoopEntry = typeof woopEntries.$inferInsert;
+export type Checkin = typeof checkins.$inferSelect;
+export type NewCheckin = typeof checkins.$inferInsert;
 export type Reflection = typeof reflections.$inferSelect;
 export type FxRate = typeof fxRates.$inferSelect;

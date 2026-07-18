@@ -1,0 +1,163 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { saveCheckin } from "@/lib/actions/checkins";
+import type { CheckinOutcome } from "@/lib/validators/checkin";
+
+export type CheckinCardInitial = {
+  outcome: CheckinOutcome;
+  feeling: number;
+  note: string | null;
+};
+
+// Order + copy fixed — growth-reactor v5 §5 Decisions (non-shaming outcome
+// labels; text labels, never color-only).
+const OUTCOME_OPTIONS: { value: CheckinOutcome; label: string }[] = [
+  { value: "done", label: "Сделал" },
+  { value: "partial", label: "Частично" },
+  { value: "skipped", label: "Не сегодня" },
+];
+
+const FEELING_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "Тяжело" },
+  { value: 2, label: "Со скрипом" },
+  { value: 3, label: "Ровно" },
+  { value: 4, label: "Хорошо" },
+  { value: 5, label: "В потоке" },
+];
+
+// Matches woop-block.tsx's raw textarea styling.
+const textareaClassName = cn(
+  "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground",
+  "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+  "dark:bg-input/30",
+);
+
+/** /today's focus-goal widget (Stage0-2, growth-reactor v5 §5/§6/§12): marks
+ *  the day's outcome + feeling + an optional private note for the focus
+ *  goal. One check-in per (goal, UTC day) — re-saving updates it. Wiring
+ *  mirrors focus-toggle.tsx: local state seeded from `initial`, useTransition
+ *  + direct server-action call, router.refresh() on success. */
+export function CheckinCard({ goalId, initial }: { goalId: string; initial: CheckinCardInitial | null }) {
+  const router = useRouter();
+  const [outcome, setOutcome] = useState<CheckinOutcome | null>(initial?.outcome ?? null);
+  const [feeling, setFeeling] = useState<number | null>(initial?.feeling ?? null);
+  const [note, setNote] = useState(initial?.note ?? "");
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [isPending, startTransition] = useTransition();
+
+  function clearFeedback() {
+    setSaved(false);
+    setError(undefined);
+  }
+
+  function handleOutcome(value: CheckinOutcome) {
+    clearFeedback();
+    setOutcome(value);
+  }
+
+  function handleFeeling(value: number) {
+    clearFeedback();
+    setFeeling(value);
+  }
+
+  function handleNote(value: string) {
+    clearFeedback();
+    setNote(value);
+  }
+
+  function handleSubmit() {
+    if (outcome === null || feeling === null) return;
+    clearFeedback();
+    startTransition(async () => {
+      const result = await saveCheckin({ goalId, outcome, feeling, note });
+      if (result.ok) {
+        setSaved(true);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  const canSubmit = outcome !== null && feeling !== null && !isPending;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Чек-ин дня</CardTitle>
+        <CardDescription>
+          {initial ? "Сегодня уже отмечено — можно изменить." : "Как прошёл день по этой цели?"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">Действие</p>
+          <div className="flex flex-wrap gap-2">
+            {OUTCOME_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                type="button"
+                variant={outcome === opt.value ? "default" : "outline"}
+                aria-pressed={outcome === opt.value}
+                disabled={isPending}
+                onClick={() => handleOutcome(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">Состояние</p>
+          <div className="flex flex-wrap gap-2">
+            {FEELING_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                type="button"
+                size="sm"
+                variant={feeling === opt.value ? "default" : "outline"}
+                aria-pressed={feeling === opt.value}
+                disabled={isPending}
+                onClick={() => handleFeeling(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="checkin-note">Заметка (только для вас)</Label>
+          <textarea
+            id="checkin-note"
+            rows={2}
+            maxLength={2000}
+            className={textareaClassName}
+            value={note}
+            disabled={isPending}
+            onChange={(e) => handleNote(e.target.value)}
+          />
+        </div>
+
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {saved ? (
+          <p role="status" className="text-sm text-positive">
+            Сохранено ✓
+          </p>
+        ) : null}
+
+        <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
+          {isPending ? "Сохраняем…" : "Сохранить чек-ин"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}

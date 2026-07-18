@@ -10,11 +10,13 @@ import {
   type GoalDeadline,
 } from "@/lib/db/queries/agenda";
 import { getGlobalStreak } from "@/lib/db/queries/streaks";
+import { getCheckinForGoalOnDate } from "@/lib/db/queries/checkins";
 import { todayKey } from "@/lib/utils/date-keys";
 import { classifyDue, formatDueLabelRu, type DueBucket } from "@/lib/utils/reminders";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/goals/empty-state";
 import { GoalCard } from "@/components/goals/goal-card";
+import { CheckinCard } from "@/components/goals/checkin-card";
 import { StreakBadge } from "@/components/goals/streak-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +89,7 @@ function DeadlineRow({ goal, today }: { goal: GoalDeadline; today: string }) {
 
 export default async function TodayPage() {
   const user = await getCurrentUser();
+  const today = todayKey();
 
   const [focusGoal, steps, deadlines, streak] = await Promise.all([
     getFocusGoal(user.id),
@@ -94,8 +97,8 @@ export default async function TodayPage() {
     listGoalsByDeadline(user.id, 14),
     getGlobalStreak(user.id),
   ]);
+  const checkin = focusGoal ? await getCheckinForGoalOnDate(user.id, focusGoal.id, today) : null;
 
-  const today = todayKey();
   const stepGroups = groupSteps(steps, today);
   const deadlineGroups = groupDeadlines(deadlines, today);
 
@@ -118,8 +121,18 @@ export default async function TodayPage() {
               <Star className="size-4 text-primary" /> Цель №1
             </h2>
             {focusGoal ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <GoalCard goal={focusGoal} isFocus />
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <GoalCard goal={focusGoal} isFocus />
+                </div>
+                <CheckinCard
+                  goalId={focusGoal.id}
+                  initial={
+                    checkin
+                      ? { outcome: checkin.outcome, feeling: checkin.feeling, note: checkin.note }
+                      : null
+                  }
+                />
               </div>
             ) : (
               <Card>

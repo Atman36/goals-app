@@ -1,19 +1,21 @@
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { checklistItems, contributions, goals } from "@/lib/db/schema";
+import { checkins, checklistItems, contributions, goals } from "@/lib/db/schema";
 import { todayKey, toDateKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { computeStreakWeeks } from "@/lib/utils/streak";
 
 /**
- * Set of Monday-anchored week-start keys that had activity — a contribution or
- * a closed checklist step — across the given goals. Ownership is guaranteed by
- * callers deriving `goalIds` from the user's own goals (see below).
+ * Set of Monday-anchored week-start keys that had activity — a contribution,
+ * a closed checklist step, or a saved check-in (any outcome, including
+ * "не сегодня" — honest marking is the North-Star action, growth-reactor v5
+ * §5/§6/§12) — across the given goals. Ownership is guaranteed by callers
+ * deriving `goalIds` from the user's own goals (see below).
  */
 async function collectActiveWeeks(goalIds: string[]): Promise<Set<string>> {
   if (goalIds.length === 0) return new Set();
 
-  const [contribRows, doneRows] = await Promise.all([
+  const [contribRows, doneRows, checkinRows] = await Promise.all([
     db
       .select({ occurredAt: contributions.occurredAt })
       .from(contributions)
@@ -29,6 +31,10 @@ async function collectActiveWeeks(goalIds: string[]): Promise<Set<string>> {
           isNotNull(checklistItems.doneAt),
         ),
       ),
+    db
+      .select({ date: checkins.date })
+      .from(checkins)
+      .where(and(inArray(checkins.goalId, goalIds), isNull(checkins.deletedAt))),
   ]);
 
   const weeks = new Set<string>();
@@ -36,6 +42,8 @@ async function collectActiveWeeks(goalIds: string[]): Promise<Set<string>> {
   for (const r of contribRows) weeks.add(weekStartKey(r.occurredAt));
   // doneAt is a Date (timestamptz) — normalize to a UTC date key first.
   for (const r of doneRows) if (r.doneAt) weeks.add(weekStartKey(toDateKey(r.doneAt)));
+  // checkins.date is already a "yyyy-MM-dd" string (date column), same as occurredAt.
+  for (const r of checkinRows) weeks.add(weekStartKey(r.date));
   return weeks;
 }
 

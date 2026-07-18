@@ -56,6 +56,27 @@ describe("buildTrajectory", () => {
     expect(week!.events).toHaveLength(0);
   });
 
+  it("rounds avgFeeling to one decimal", () => {
+    // 2 + 3 → 2.5 (exact) and 1 + 2 + 2 → 5/3 = 1.666… → 1.7 (rounded), both
+    // pinned as literals so a rounding regression fails here.
+    const half = build({
+      checkins: [
+        { date: "2026-06-22", outcome: "done", feeling: 2 },
+        { date: "2026-06-23", outcome: "done", feeling: 3 },
+      ],
+    });
+    expect(half.find((w) => w.weekStart === "2026-06-22")!.checkins!.avgFeeling).toBe(2.5);
+
+    const third = build({
+      checkins: [
+        { date: "2026-06-22", outcome: "done", feeling: 1 },
+        { date: "2026-06-23", outcome: "partial", feeling: 2 },
+        { date: "2026-06-24", outcome: "partial", feeling: 2 },
+      ],
+    });
+    expect(third.find((w) => w.weekStart === "2026-06-22")!.checkins!.avgFeeling).toBe(1.7);
+  });
+
   it("includes gallery photos but excludes comment-attached media", () => {
     const weeks = build({
       media: [

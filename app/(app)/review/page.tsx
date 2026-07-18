@@ -17,10 +17,12 @@ function progressedLine(goal: GoalActivity): string {
   const s = goal.stepsDoneInWindow;
   const ci = goal.checkinsInWindow;
   if (c === 0 && s === 0 && ci === 0) return "Есть активность на этой неделе";
-  const parts = [
-    `${c} ${pluralRu(c, "пополнение", "пополнения", "пополнений")}`,
-    `${s} ${pluralRu(s, "шаг", "шага", "шагов")}`,
-  ];
+  // Only non-zero parts — a goal that progressed purely via check-ins must not
+  // read «0 пополнений · 0 шагов · N чек-инов». At least one part is non-zero
+  // here (the all-zero case returned above), so `parts` is never empty.
+  const parts: string[] = [];
+  if (c > 0) parts.push(`${c} ${pluralRu(c, "пополнение", "пополнения", "пополнений")}`);
+  if (s > 0) parts.push(`${s} ${pluralRu(s, "шаг", "шага", "шагов")}`);
   if (ci > 0) parts.push(`${ci} ${pluralRu(ci, "чек-ин", "чек-ина", "чек-инов")}`);
   return `${parts.join(" · ")} за неделю`;
 }

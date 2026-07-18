@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { saveCheckin } from "@/lib/actions/checkins";
 import type { CheckinOutcome } from "@/lib/validators/checkin";
+import { FEELING_LABELS, OUTCOME_LABELS } from "@/lib/checkin-labels";
 
 export type CheckinCardInitial = {
   outcome: CheckinOutcome;
@@ -15,21 +16,19 @@ export type CheckinCardInitial = {
   note: string | null;
 };
 
-// Order + copy fixed — growth-reactor v5 §5 Decisions (non-shaming outcome
+// Order fixed here; copy lives in lib/checkin-labels.ts (shared with the
+// trajectory summary) — growth-reactor v5 §5 Decisions (non-shaming outcome
 // labels; text labels, never color-only).
 const OUTCOME_OPTIONS: { value: CheckinOutcome; label: string }[] = [
-  { value: "done", label: "Сделал" },
-  { value: "partial", label: "Частично" },
-  { value: "skipped", label: "Не сегодня" },
+  { value: "done", label: OUTCOME_LABELS.done },
+  { value: "partial", label: OUTCOME_LABELS.partial },
+  { value: "skipped", label: OUTCOME_LABELS.skipped },
 ];
 
-const FEELING_OPTIONS: { value: number; label: string }[] = [
-  { value: 1, label: "Тяжело" },
-  { value: 2, label: "Со скрипом" },
-  { value: 3, label: "Ровно" },
-  { value: 4, label: "Хорошо" },
-  { value: 5, label: "В потоке" },
-];
+const FEELING_OPTIONS: { value: number; label: string }[] = [1, 2, 3, 4, 5].map((value) => ({
+  value,
+  label: FEELING_LABELS[value],
+}));
 
 // Matches woop-block.tsx's raw textarea styling.
 const textareaClassName = cn(

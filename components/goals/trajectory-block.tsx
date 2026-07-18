@@ -2,24 +2,12 @@ import { addDays, format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TrajectoryWeek, WeekCheckinSummary } from "@/lib/utils/trajectory";
-
-// Feeling labels 1–5 mirror the check-in card's FEELING_OPTIONS
-// (components/goals/checkin-card.tsx). Kept as a local server-safe const rather
-// than imported from that "use client" module — a plain export from a client
-// module becomes a client reference when pulled into a Server Component, so it
-// can't be read here. Text carries all meaning; no color-only signal.
-const FEELING_LABELS: Record<number, string> = {
-  1: "Тяжело",
-  2: "Со скрипом",
-  3: "Ровно",
-  4: "Хорошо",
-  5: "В потоке",
-};
+import { FEELING_LABELS, OUTCOME_LABELS } from "@/lib/checkin-labels";
 
 function checkinSummaryLine(summary: WeekCheckinSummary): string {
-  // Outcome wording matches the real check-in feature (OUTCOME_OPTIONS:
-  // «Сделал» / «Частично» / «Не сегодня»), lowercased for the inline summary.
-  const base = `Чек-ины: ${summary.total} (сделал ${summary.done} · частично ${summary.partial} · не сегодня ${summary.skipped})`;
+  // Outcome/feeling wording comes from the shared check-in copy
+  // (lib/checkin-labels.ts); outcomes are lowercased for this inline summary.
+  const base = `Чек-ины: ${summary.total} (${OUTCOME_LABELS.done.toLowerCase()} ${summary.done} · ${OUTCOME_LABELS.partial.toLowerCase()} ${summary.partial} · ${OUTCOME_LABELS.skipped.toLowerCase()} ${summary.skipped})`;
   if (summary.avgFeeling === null) return base;
   const label = FEELING_LABELS[Math.round(summary.avgFeeling)];
   return label ? `${base} · состояние: ${label}` : base;

@@ -55,6 +55,13 @@ npx drizzle-kit migrate
 
 Включите daily backups в настройках проекта Supabase (Database → Backups) — требование PRD §8.1 (P0). Это настройка дашборда, не код.
 
+Дополнительно — логический бэкап командой `npm run db:backup` (pg_dump/psql/supabase CLI на этой машине нет, поэтому скрипт использует штатный `postgres`-драйвер приложения). Пишет в `~/Backups/goals-app/backup-<timestamp>/` — вне репозитория, в git не попадает: по одному JSON-файлу на таблицу схемы `public` (все строки) плюс `manifest.json` со сводкой (таблицы со счётчиками строк, коммит, статус журнала `drizzle.__drizzle_migrations`).
+
+Восстановление:
+- при аварии — первично: Supabase dashboard → Backups/PITR (точка восстановления для всего проекта);
+- точечно — вставить нужные строки из JSON-файла вручную через SQL Editor (`INSERT INTO ...` по данным дампа), когда достаточно восстановить один объект, а не всю БД;
+- бэкап `npm run db:backup` обязателен перед каждой миграцией схемы (growth-reactor v5 §10.1).
+
 ### 5. Sentry (опционально)
 
 Для сбора ошибок задайте `SENTRY_DSN` и `NEXT_PUBLIC_SENTRY_DSN`.

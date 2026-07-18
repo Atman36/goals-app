@@ -57,6 +57,8 @@ describe("bucketGoals", () => {
         createdAtKey: "2026-01-01",
         contributionsInWindow: 0,
         stepsDoneInWindow: 0,
+        checkinsInWindow: 0,
+        sphere: null,
       },
       {
         goalId: "g-progressed-1",
@@ -65,6 +67,8 @@ describe("bucketGoals", () => {
         createdAtKey: "2026-01-01",
         contributionsInWindow: 2,
         stepsDoneInWindow: 1,
+        checkinsInWindow: 0,
+        sphere: null,
       },
       {
         goalId: "g-steady-1",
@@ -73,6 +77,8 @@ describe("bucketGoals", () => {
         createdAtKey: "2026-01-01",
         contributionsInWindow: 0,
         stepsDoneInWindow: 0,
+        checkinsInWindow: 0,
+        sphere: null,
       },
       {
         goalId: "g-progressed-2",
@@ -81,6 +87,8 @@ describe("bucketGoals", () => {
         createdAtKey: "2026-01-01",
         contributionsInWindow: 1,
         stepsDoneInWindow: 0,
+        checkinsInWindow: 0,
+        sphere: null,
       },
       {
         goalId: "g-stalled-2",
@@ -89,6 +97,8 @@ describe("bucketGoals", () => {
         createdAtKey: "2026-06-09", // 30 days ago
         contributionsInWindow: 0,
         stepsDoneInWindow: 0,
+        checkinsInWindow: 0,
+        sphere: null,
       },
     ];
 

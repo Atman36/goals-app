@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GOAL_SPHERES } from "@/lib/spheres";
 
 // Form-facing mirror of lib/validators/goal.ts's `goalSchema`, but in the
 // shapes an HTML form actually produces (plain strings, incl. amounts in
@@ -38,6 +39,9 @@ export const clientGoalSchema = z
     currencySymbol: z.enum(["RUB", "USD"]).optional().or(z.literal("")),
     targetAmountMajor: z.string().optional(),
     initialAmountMajor: z.string().optional(),
+    // Same idiom as currencySymbol: a native <select> always sends a string,
+    // so "" (no HTML value for "unset") stands in for "no sphere chosen".
+    sphere: z.enum(GOAL_SPHERES).optional().or(z.literal("")),
   })
   .superRefine((data, ctx) => {
     if (data.kind !== "financial") return;

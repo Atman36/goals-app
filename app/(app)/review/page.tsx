@@ -4,22 +4,25 @@ import { AlertTriangle, Minus, TrendingUp } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getWeeklyReviewData } from "@/lib/db/queries/agenda";
 import { bucketGoals, type GoalActivity } from "@/lib/utils/weekly-review";
+import { buildBalanceWheel } from "@/lib/utils/balance-wheel";
+import { BalanceWheel } from "@/components/review/balance-wheel";
 import { todayKey, daysBetweenKeys } from "@/lib/utils/date-keys";
 import { pluralRu } from "@/lib/utils/plural";
 import { EmptyState } from "@/components/goals/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function progressedLine(goal: GoalActivity): string {
   const c = goal.contributionsInWindow;
   const s = goal.stepsDoneInWindow;
-  if (c === 0 && s === 0) return "Есть активность на этой неделе";
-  return `${c} ${pluralRu(c, "пополнение", "пополнения", "пополнений")} · ${s} ${pluralRu(
-    s,
-    "шаг",
-    "шага",
-    "шагов",
-  )} за неделю`;
+  const ci = goal.checkinsInWindow;
+  if (c === 0 && s === 0 && ci === 0) return "Есть активность на этой неделе";
+  const parts = [
+    `${c} ${pluralRu(c, "пополнение", "пополнения", "пополнений")}`,
+    `${s} ${pluralRu(s, "шаг", "шага", "шагов")}`,
+  ];
+  if (ci > 0) parts.push(`${ci} ${pluralRu(ci, "чек-ин", "чек-ина", "чек-инов")}`);
+  return `${parts.join(" · ")} за неделю`;
 }
 
 function stalledLine(goal: GoalActivity, today: string): string {
@@ -129,6 +132,16 @@ export default async function WeeklyReviewPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Колесо баланса</CardTitle>
+              <CardDescription>Куда уходит внимание по сферам жизни</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BalanceWheel data={buildBalanceWheel(data)} />
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

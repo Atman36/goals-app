@@ -13,6 +13,7 @@ import {
   jsonb,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { GOAL_SPHERES } from "@/lib/spheres";
 
 // --- Enums ---------------------------------------------------------------
 
@@ -29,6 +30,7 @@ export const checklistItemKindEnum = pgEnum("checklist_item_kind", [
 ]);
 export const fxSourceEnum = pgEnum("fx_source", ["cbr", "manual"]);
 export const checkinOutcomeEnum = pgEnum("checkin_outcome", ["done", "partial", "skipped"]);
+export const goalSphereEnum = pgEnum("goal_sphere", [...GOAL_SPHERES]);
 
 // --- Tables ----------------------------------------------------------------
 // Money is always bigint in minor units (kopecks/cents) — see PRD §4/§7.
@@ -51,6 +53,7 @@ export const goals = pgTable("goals", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   kind: goalKindEnum("kind").notNull(),
+  sphere: goalSphereEnum("sphere"), // nullable — existing goals stay "Без сферы"
   title: varchar("title", { length: 60 }).notNull(),
   description: text("description"),
   coverImageId: uuid("cover_image_id"), // FK to mediaItems, added via ALTER (circular)

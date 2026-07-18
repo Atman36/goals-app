@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GOAL_SPHERES } from "@/lib/spheres";
 
 export const currencySchema = z.enum(["RUB", "USD"]);
 export type Currency = z.infer<typeof currencySchema>;
@@ -21,6 +22,7 @@ const goalBaseSchema = z.object({
   deadline: z.coerce.date(),
   coverImageId: z.uuid().optional(),
   selfConcordance: selfConcordanceSchema.optional(),
+  sphere: z.enum(GOAL_SPHERES).nullable().optional(),
 });
 
 export const financialGoalSchema = goalBaseSchema.extend({

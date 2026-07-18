@@ -2,6 +2,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, max, sql } from "dr
 import { db } from "@/lib/db";
 import {
   checklistItems,
+  checkins,
   contributions,
   goals,
   users,
@@ -30,7 +31,7 @@ export async function getFocusGoal(userId: string): Promise<GoalWithProgress | n
 
 export async function getWeeklyReviewData(userId: string): Promise<GoalActivity[]> {
   const activeGoals = await db
-    .select({ id: goals.id, title: goals.title, createdAt: goals.createdAt })
+    .select({ id: goals.id, title: goals.title, createdAt: goals.createdAt, sphere: goals.sphere })
     .from(goals)
     .where(and(eq(goals.userId, userId), isNull(goals.deletedAt), eq(goals.status, "active")));
 
@@ -78,21 +79,37 @@ export async function getWeeklyReviewData(userId: string): Promise<GoalActivity[
     )
     .groupBy(checklistItems.goalId);
 
+  const checkinAgg = await db
+    .select({
+      goalId: checkins.goalId,
+      lastDate: max(checkins.date),
+      // gte(...) (not raw interpolation) — same postgres-js trap as the two
+      // aggregates above.
+      windowCount: sql<number>`count(*) filter (where ${gte(checkins.date, windowStartKey)})`.mapWith(
+        Number,
+      ),
+    })
+    .from(checkins)
+    .where(and(inArray(checkins.goalId, ids), isNull(checkins.deletedAt)))
+    .groupBy(checkins.goalId);
+
   const contribByGoal = new Map(contribAgg.map((r) => [r.goalId, r]));
   const stepByGoal = new Map(stepAgg.map((r) => [r.goalId, r]));
+  const checkinByGoal = new Map(checkinAgg.map((r) => [r.goalId, r]));
 
   return activeGoals.map((g) => {
     const contrib = contribByGoal.get(g.id);
     const step = stepByGoal.get(g.id);
-    // contrib.lastOccurredAt is already a "yyyy-MM-dd" string (date column) —
-    // do NOT re-wrap in toDateKey. step.lastDoneAt is a Date (timestamptz).
+    const checkin = checkinByGoal.get(g.id);
+    // contrib.lastOccurredAt and checkin.lastDate are already "yyyy-MM-dd"
+    // strings (date columns) — do NOT re-wrap in toDateKey. step.lastDoneAt
+    // is a Date (timestamptz).
     const contribKey = contrib?.lastOccurredAt ?? null;
     const stepKey = step?.lastDoneAt ? toDateKey(step.lastDoneAt) : null;
-    let lastActivityKey: string | null;
-    if (contribKey && stepKey) {
-      lastActivityKey = contribKey > stepKey ? contribKey : stepKey;
-    } else {
-      lastActivityKey = contribKey ?? stepKey;
+    const checkinKey = checkin?.lastDate ?? null;
+    let lastActivityKey: string | null = null;
+    for (const key of [contribKey, stepKey, checkinKey]) {
+      if (key && (!lastActivityKey || key > lastActivityKey)) lastActivityKey = key;
     }
 
     return {
@@ -102,6 +119,8 @@ export async function getWeeklyReviewData(userId: string): Promise<GoalActivity[
       createdAtKey: toDateKey(g.createdAt),
       contributionsInWindow: contrib?.windowCount ?? 0,
       stepsDoneInWindow: step?.windowCount ?? 0,
+      checkinsInWindow: checkin?.windowCount ?? 0,
+      sphere: g.sphere,
     };
   });
 }

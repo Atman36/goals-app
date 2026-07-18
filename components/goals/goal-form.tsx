@@ -11,10 +11,14 @@ import { CoverUpload, type CoverUploadResult } from "@/components/goals/cover-up
 import { toMajorUnits } from "@/lib/utils/money";
 import type { Currency } from "@/lib/validators/goal";
 import type { GoalWithProgress } from "@/lib/db/queries/goals";
+import { GOAL_SPHERES, SPHERE_LABELS } from "@/lib/spheres";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const SELECT_CLASSNAME =
+  "h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 type GoalFormProps =
   | {
@@ -53,6 +57,7 @@ export function GoalForm(props: GoalFormProps) {
             props.goal.targetAmount != null ? String(toMajorUnits(props.goal.targetAmount)) : "",
           initialAmountMajor:
             props.goal.initialAmount != null ? String(toMajorUnits(props.goal.initialAmount)) : "0",
+          sphere: props.goal.sphere ?? "",
         }
       : {
           kind: props.kind,
@@ -62,6 +67,7 @@ export function GoalForm(props: GoalFormProps) {
           currencySymbol: props.kind === "financial" ? props.defaultCurrency : undefined,
           targetAmountMajor: "",
           initialAmountMajor: "0",
+          sphere: "",
         };
 
   const {
@@ -209,6 +215,18 @@ export function GoalForm(props: GoalFormProps) {
         {errors.description ? (
           <p className="text-sm text-destructive">{errors.description.message}</p>
         ) : null}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="sphere">Сфера жизни</Label>
+        <select id="sphere" className={SELECT_CLASSNAME} {...register("sphere")}>
+          <option value="">Не выбрана</option>
+          {GOAL_SPHERES.map((s) => (
+            <option key={s} value={s}>
+              {SPHERE_LABELS[s]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {formError ? <p className="text-sm text-destructive">{formError}</p> : null}

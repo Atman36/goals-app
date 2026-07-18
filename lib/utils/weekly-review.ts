@@ -1,4 +1,5 @@
 import { daysBetweenKeys, type DateKey } from "@/lib/utils/date-keys";
+import type { GoalSphere } from "@/lib/spheres";
 
 export type ReviewBucket = "progressed" | "stalled" | "steady";
 
@@ -6,10 +7,12 @@ export type ReviewBucket = "progressed" | "stalled" | "steady";
 export interface GoalActivity {
   goalId: string;
   title: string;
-  lastActivityKey: DateKey | null; // max(last contribution occurredAt, last done step date), null if none
+  lastActivityKey: DateKey | null; // max(last contribution occurredAt, last done step date, last check-in date), null if none
   createdAtKey: DateKey;
   contributionsInWindow: number;   // count within progressedWithinDays
   stepsDoneInWindow: number;       // count within progressedWithinDays
+  checkinsInWindow: number;        // count within progressedWithinDays
+  sphere: GoalSphere | null;       // life sphere the goal belongs to, null if unassigned
 }
 
 export function classifyActivity(params: {

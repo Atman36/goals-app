@@ -65,6 +65,9 @@ function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcorda
       targetAmount: target === null ? undefined : toMinorUnits(target),
       initialAmount: initial === null ? undefined : toMinorUnits(initial),
       selfConcordance: input.selfConcordance,
+      // "" (unset in the HTML select) must map to null, not be dropped — a
+      // clearing edit needs SQL NULL to actually reach `.set({...values})`.
+      sphere: input.sphere ? input.sphere : null,
     };
   }
 
@@ -81,6 +84,7 @@ function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcorda
     targetAmount: undefined,
     initialAmount: undefined,
     selfConcordance: input.selfConcordance,
+    sphere: input.sphere ? input.sphere : null,
   };
 }
 
@@ -103,6 +107,9 @@ function toInsertValues(data: GoalInput): Omit<NewGoal, "userId"> {
     // undefined-valued keys; a plain insert falls back to the column
     // default/NULL for them).
     selfConcordance: data.selfConcordance,
+    // Explicit null (never left undefined) so clearing the sphere on edit
+    // actually writes SQL NULL instead of `.set()` silently dropping the key.
+    sphere: data.sphere ?? null,
   };
 
   if (data.kind === "financial") {

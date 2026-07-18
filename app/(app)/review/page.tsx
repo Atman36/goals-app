@@ -59,6 +59,9 @@ export default async function WeeklyReviewPage() {
         <p className="text-sm text-muted-foreground">
           Что продвинулось и что застряло за последнюю неделю
         </p>
+        <Link href="/reflections" className="text-sm font-semibold text-primary hover:underline">
+          Пройти рефлексию недели →
+        </Link>
       </div>
 
       {data.length === 0 ? (

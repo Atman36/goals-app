@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/", label: "Мои цели" },
   { href: "/today", label: "Сегодня" },
+  { href: "/reflections", label: "Неделя" },
   { href: "/review", label: "Обзор" },
   { href: "/gallery", label: "Галерея" },
   { href: "/settings", label: "Настройки" },

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { checkins, checklistItems, contributions, goals } from "@/lib/db/schema";
+import { checkins, checklistItems, contributions, goals, reflections } from "@/lib/db/schema";
 import { todayKey, toDateKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { computeStreakWeeks } from "@/lib/utils/streak";
@@ -47,13 +47,36 @@ async function collectActiveWeeks(goalIds: string[]): Promise<Set<string>> {
   return weeks;
 }
 
-/** Global weekly streak across all of the user's non-deleted goals (any status). */
+/** Set of week-start keys with a saved reflection for the user — the weekly
+ *  reflection ritual is itself global-streak activity (growth-reactor v5
+ *  §6/§11/§12 Decisions). Reflections aren't goal-scoped, so unlike
+ *  `collectActiveWeeks` this is keyed by userId and only ever feeds the
+ *  global streak, never a per-goal one. */
+async function collectReflectionWeeks(userId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ weekStart: reflections.weekStart })
+    .from(reflections)
+    .where(eq(reflections.userId, userId));
+
+  const weeks = new Set<string>();
+  // weekStart is already a "yyyy-MM-dd" string (date column), same as
+  // occurredAt/checkins.date above.
+  for (const r of rows) weeks.add(weekStartKey(r.weekStart));
+  return weeks;
+}
+
+/** Global weekly streak across all of the user's non-deleted goals (any
+ *  status) plus the user's own reflection weeks. */
 export async function getGlobalStreak(userId: string): Promise<number> {
   const rows = await db
     .select({ id: goals.id })
     .from(goals)
     .where(and(eq(goals.userId, userId), isNull(goals.deletedAt)));
-  const weeks = await collectActiveWeeks(rows.map((r) => r.id));
+  const [goalWeeks, reflectionWeeks] = await Promise.all([
+    collectActiveWeeks(rows.map((r) => r.id)),
+    collectReflectionWeeks(userId),
+  ]);
+  const weeks = new Set([...goalWeeks, ...reflectionWeeks]);
   return computeStreakWeeks(weeks, weekStartKey(todayKey()));
 }
 

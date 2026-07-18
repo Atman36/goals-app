@@ -167,19 +167,31 @@ export const checkins = pgTable(
   (table) => [uniqueIndex("checkins_goal_date_unique").on(table.goalId, table.date)],
 );
 
-// P2
-export const reflections = pgTable("reflections", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  weekStart: date("week_start").notNull(),
-  promised: text("promised"),
-  done: text("done"),
-  blocked: text("blocked"),
-  newIfThen: text("new_if_then"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+// Weekly reflection: 5 questions + the previous week's promise outcome
+// (growth-reactor v5 §6/§11/§12). One row per (user_id, week_start) — see the
+// unique index below and the upsert in lib/db/queries/reflections.ts. A row
+// reviews the PREVIOUS week and records the promise FOR the current week;
+// prevOutcome marks that promise's fate and is filled in on the NEXT week's
+// row (a completed cycle = a row with prevOutcome set).
+export const reflections = pgTable(
+  "reflections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weekStart: date("week_start").notNull(),
+    promised: text("promised"),
+    done: text("done"),
+    blocked: text("blocked"),
+    newIfThen: text("new_if_then"),
+    learned: text("learned"),
+    promise: text("promise"),
+    prevOutcome: checkinOutcomeEnum("prev_outcome"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("reflections_user_week_unique").on(table.userId, table.weekStart)],
+);
 
 // P2 — reference FX rate for portfolio equivalent
 export const fxRates = pgTable("fx_rates", {
@@ -204,4 +216,5 @@ export type NewWoopEntry = typeof woopEntries.$inferInsert;
 export type Checkin = typeof checkins.$inferSelect;
 export type NewCheckin = typeof checkins.$inferInsert;
 export type Reflection = typeof reflections.$inferSelect;
+export type NewReflection = typeof reflections.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;

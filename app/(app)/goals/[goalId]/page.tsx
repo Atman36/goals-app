@@ -10,6 +10,8 @@ import { listComments } from "@/lib/db/queries/comments";
 import { listMediaByGoal } from "@/lib/db/queries/media";
 import { getWoopByGoal } from "@/lib/db/queries/woop";
 import { getGoalStreak } from "@/lib/db/queries/streaks";
+import { listCheckinsForGoal } from "@/lib/db/queries/checkins";
+import { listGoalRevisions } from "@/lib/db/queries/goal-revisions";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { formatMoney } from "@/lib/utils/money";
 import { pluralRu } from "@/lib/utils/plural";
@@ -24,6 +26,8 @@ import { GoalGallery, type GalleryImage } from "@/components/goals/goal-gallery"
 import { WoopBlock } from "@/components/goals/woop-block";
 import { FocusToggle } from "@/components/goals/focus-toggle";
 import { StreakBadge } from "@/components/goals/streak-badge";
+import { TrajectoryBlock } from "@/components/goals/trajectory-block";
+import { buildTrajectory } from "@/lib/utils/trajectory";
 
 // PRD §3.3: a goal's page — progress ring, idempotent quick-add, checklist,
 // history, comments, gallery. Server component fetching everything up front;
@@ -47,13 +51,44 @@ export default async function GoalPage({
   const isFinancial = goal.kind === "financial";
 
   const contributions = isFinancial ? await listContributions(user.id, goalId) : [];
-  const [checklistItems, comments, media, woop, streak] = await Promise.all([
+  const [checklistItems, comments, media, woop, streak, checkins, revisions] = await Promise.all([
     listChecklistItems(user.id, goalId),
     listComments(user.id, goalId),
     listMediaByGoal(user.id, goalId),
     getWoopByGoal(user.id, goalId),
     getGoalStreak(user.id, goalId),
+    listCheckinsForGoal(user.id, goalId),
+    listGoalRevisions(user.id, goalId),
   ]);
+
+  // «Траектория»: the goal's path over time, assembled from the dated rows the
+  // page already loaded plus check-ins and revisions. Contributions are only
+  // loaded for financial goals (empty otherwise), matching the page's existing
+  // fetch shape.
+  const trajectory = buildTrajectory({
+    goal: {
+      title: goal.title,
+      createdAt: goal.createdAt,
+      achievedAt: goal.achievedAt,
+      currency: goal.currency,
+    },
+    contributions: contributions.map((c) => ({
+      occurredAt: c.occurredAt,
+      amount: c.amount,
+      note: c.note,
+    })),
+    steps: checklistItems.map((i) => ({ title: i.title, isDone: i.isDone, doneAt: i.doneAt })),
+    comments: comments.map((c) => ({ body: c.body, createdAt: c.createdAt })),
+    media: media.map((m) => ({ commentId: m.commentId, goalId: m.goalId, createdAt: m.createdAt })),
+    checkins,
+    revisions: revisions.map((r) => ({
+      title: r.title,
+      description: r.description,
+      deadline: r.deadline,
+      changed: r.changed,
+      changedAt: r.changedAt,
+    })),
+  });
 
   const mediaWithUrls = await Promise.all(
     media.map(async (m) => ({ ...m, url: await getSignedMediaUrl(m.storagePath).catch(() => null) })),
@@ -171,6 +206,8 @@ export default async function GoalPage({
       <WoopBlock goalId={goal.id} initialWoop={woop} />
 
       <CommentsBlock goalId={goal.id} comments={commentsWithPhotos} />
+
+      <TrajectoryBlock weeks={trajectory} />
 
       {showCelebration ? (
         <CelebrationOverlay

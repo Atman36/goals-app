@@ -170,6 +170,25 @@ export const checkins = pgTable(
   (table) => [uniqueIndex("checkins_goal_date_unique").on(table.goalId, table.date)],
 );
 
+// Goal formulation revisions — «Траектория» Stage0-5. One row per content edit
+// of a goal (title/description/deadline), storing the snapshot BEFORE the change
+// so a pivot is preserved as a step of the path instead of silently overwriting.
+// Goal-child table (no user_id; ownership via goals.user_id, same convention as
+// contributions/checkins). Written inside the updateGoal transaction (see
+// lib/db/queries/goal-revisions.ts) only when at least one field actually
+// differs; status changes and soft deletes never create a revision.
+export const goalRevisions = pgTable("goal_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  goalId: uuid("goal_id")
+    .notNull()
+    .references(() => goals.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 60 }).notNull(), // value BEFORE the change
+  description: text("description"), // value BEFORE the change
+  deadline: date("deadline").notNull(), // value BEFORE the change
+  changed: jsonb("changed").$type<string[]>().notNull(), // e.g. ["title","deadline"]
+  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Weekly reflection: 5 questions + the previous week's promise outcome
 // (growth-reactor v5 §6/§11/§12). One row per (user_id, week_start) — see the
 // unique index below and the upsert in lib/db/queries/reflections.ts. A row
@@ -218,6 +237,8 @@ export type WoopEntry = typeof woopEntries.$inferSelect;
 export type NewWoopEntry = typeof woopEntries.$inferInsert;
 export type Checkin = typeof checkins.$inferSelect;
 export type NewCheckin = typeof checkins.$inferInsert;
+export type GoalRevision = typeof goalRevisions.$inferSelect;
+export type NewGoalRevision = typeof goalRevisions.$inferInsert;
 export type Reflection = typeof reflections.$inferSelect;
 export type NewReflection = typeof reflections.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;

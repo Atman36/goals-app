@@ -1,6 +1,32 @@
-import { and, eq, getTableColumns, isNull } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { checkins, goals, type Checkin, type NewCheckin } from "@/lib/db/schema";
+
+/** All non-deleted check-ins for a goal the user owns, oldest first — feeds the
+ *  goal-page trajectory's weekly aggregation. Ownership scoped via the goals
+ *  join, mirroring getCheckinForGoalOnDate. */
+export async function listCheckinsForGoal(
+  userId: string,
+  goalId: string,
+): Promise<{ date: string; outcome: "done" | "partial" | "skipped"; feeling: number }[]> {
+  return db
+    .select({
+      date: checkins.date,
+      outcome: checkins.outcome,
+      feeling: checkins.feeling,
+    })
+    .from(checkins)
+    .innerJoin(goals, eq(goals.id, checkins.goalId))
+    .where(
+      and(
+        eq(checkins.goalId, goalId),
+        isNull(checkins.deletedAt),
+        eq(goals.userId, userId),
+        isNull(goals.deletedAt),
+      ),
+    )
+    .orderBy(asc(checkins.date));
+}
 
 /** The (non-deleted) check-in for a goal on a given UTC date-key, scoped to
  *  the owning user via goals.userId — mirrors getGoalWithDetails's ownership

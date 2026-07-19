@@ -9,12 +9,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <QueryProvider>
       <div className="flex min-h-full flex-1 flex-col">
         <header className="sticky top-0 z-10 border-b bg-background/86 backdrop-blur-md">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <Link href="/" className="font-display text-lg font-bold tracking-tight">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <Link href="/" className="shrink-0 font-display text-lg font-bold tracking-tight">
               Цели
             </Link>
-            <NavLinks />
-            <div className="flex items-center gap-3">
+            <NavLinks className="order-last w-full sm:order-none sm:w-auto sm:min-w-0 sm:flex-1" />
+            <div className="flex shrink-0 items-center gap-3">
               <Button nativeButton={false} render={<Link href="/goals/new">+ Новая цель</Link>} />
               <div
                 aria-hidden

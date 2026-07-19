@@ -14,11 +14,16 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Настройки" },
 ];
 
-export function NavLinks() {
+export function NavLinks({ className }: { className?: string }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex items-center gap-4 text-sm">
+    <nav
+      className={cn(
+        "flex items-center gap-3 overflow-x-auto text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-4 md:justify-center",
+        className
+      )}
+    >
       {NAV_ITEMS.map((item) => {
         const active = pathname === item.href;
         return (
@@ -26,7 +31,7 @@ export function NavLinks() {
             key={item.href}
             href={item.href}
             className={cn(
-              "transition-colors",
+              "shrink-0 whitespace-nowrap transition-colors",
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >

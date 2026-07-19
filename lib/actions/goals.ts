@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import {
   insertGoal,
-  updateGoal as updateGoalQuery,
   softDeleteGoal,
   setGoalStatus,
   getGoalWithDetails,
@@ -12,8 +11,7 @@ import {
   type GoalWithProgress,
 } from "@/lib/db/queries/goals";
 import { insertWoopEntry } from "@/lib/db/queries/woop";
-import { insertRevisionAndUpdateGoal } from "@/lib/db/queries/goal-revisions";
-import { diffGoalContent } from "@/lib/utils/goal-revision";
+import { updateGoalWithRevision } from "@/lib/db/queries/goal-revisions";
 import type { NewGoal } from "@/lib/db/schema";
 import { goalSchema, goalUpdateSchema, goalIdSchema, type GoalInput } from "@/lib/validators/goal";
 import { woopInputSchema, type WoopInput } from "@/lib/validators/woop";
@@ -232,31 +230,16 @@ export async function updateGoal(
     }
   }
 
-  // Record the formulation revision (Decision 3): when a content field
-  // (title/description/deadline) actually changes, snapshot the PRIOR values
-  // as a revision and apply the update atomically; otherwise keep the single
-  // update. Reuses the `existing` row already loaded above — no extra read.
+  // The query locks and re-reads the row before deciding whether to snapshot a
+  // formulation revision, so simultaneous edits cannot record a stale prior
+  // state. Sphere-only edits still update without creating a revision.
   const values = toInsertValues(parsed.data);
-  const changed = diffGoalContent(
-    { title: existing.title, description: existing.description, deadline: existing.deadline },
-    { title: values.title, description: values.description ?? null, deadline: values.deadline },
-  );
-
-  const updated =
-    changed.length > 0
-      ? await insertRevisionAndUpdateGoal(
-          user.id,
-          input.id,
-          {
-            goalId: input.id,
-            title: existing.title,
-            description: existing.description,
-            deadline: existing.deadline,
-            changed,
-          },
-          values,
-        )
-      : await updateGoalQuery(user.id, input.id, values);
+  const updated = await updateGoalWithRevision(user.id, input.id, {
+    ...values,
+    title: values.title,
+    description: values.description ?? null,
+    deadline: values.deadline,
+  });
   if (!updated) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
   log.info({ goalId: updated.id }, "goal updated");

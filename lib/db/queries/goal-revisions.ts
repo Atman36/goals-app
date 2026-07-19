@@ -6,8 +6,8 @@ import {
   type Goal,
   type GoalRevision,
   type NewGoal,
-  type NewGoalRevision,
 } from "@/lib/db/schema";
+import { diffGoalContent } from "@/lib/utils/goal-revision";
 
 /** Formulation revisions for a goal the user owns, oldest first — the order the
  *  trajectory builder replays them in. Ownership is proven by an inner join to
@@ -35,26 +35,46 @@ export async function listGoalRevisions(userId: string, goalId: string): Promise
     .orderBy(asc(goalRevisions.changedAt));
 }
 
-/** Atomic content edit: records the prior snapshot as a revision AND applies the
- *  new values to the goal inside one transaction, so the goal never changes
- *  without its revision (Decision 3). Mirrors the query-layer updateGoal's
- *  ownership scoping; returns null (rolling back the insert) when the goal isn't
- *  the user's / is deleted. Called only when diffGoalContent found a change. */
-export async function insertRevisionAndUpdateGoal(
+/** Atomic goal edit: locks and re-reads the current formulation, records that
+ *  exact snapshot when content changed, then applies the update. The row lock
+ *  prevents two tabs from both recording the same stale "before" state. */
+export async function updateGoalWithRevision(
   userId: string,
   goalId: string,
-  revision: NewGoalRevision,
-  goalValues: Partial<Omit<NewGoal, "id" | "userId">>,
+  goalValues: Partial<Omit<NewGoal, "id" | "userId">> & {
+    title: string;
+    description: string | null;
+    deadline: string;
+  },
 ): Promise<Goal | null> {
   return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({
+        title: goals.title,
+        description: goals.description,
+        deadline: goals.deadline,
+      })
+      .from(goals)
+      .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
+      .for("update");
+    if (!current) return null;
+
+    const changed = diffGoalContent(current, goalValues);
+    if (changed.length > 0) {
+      await tx.insert(goalRevisions).values({
+        goalId,
+        title: current.title,
+        description: current.description,
+        deadline: current.deadline,
+        changed,
+      });
+    }
+
     const [updated] = await tx
       .update(goals)
       .set({ ...goalValues, updatedAt: new Date() })
       .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
       .returning();
-    if (!updated) return null;
-
-    await tx.insert(goalRevisions).values(revision);
-    return updated;
+    return updated ?? null;
   });
 }

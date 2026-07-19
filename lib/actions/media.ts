@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { BUCKET_MEDIA, type AllowedMediaType } from "@/lib/storage";
-import { insertMediaItem, countMediaForGoal } from "@/lib/db/queries/media";
-import { updateGoal as updateGoalQuery } from "@/lib/db/queries/goals";
+import { insertMediaItem, countMediaForGoal, setGoalCoverForUser } from "@/lib/db/queries/media";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import {
@@ -127,7 +126,7 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
   }
 
   if (parsed.data.setAsCover && parsed.data.goalId) {
-    await updateGoalQuery(user.id, parsed.data.goalId, { coverImageId: media.id });
+    await setGoalCoverForUser(user.id, parsed.data.goalId, media.id);
   }
 
   track({
@@ -156,7 +155,7 @@ export type SetCoverResult = { ok: true } | { ok: false; error: string };
  * "сделать обложкой" thumbnail action. Distinct from registerMedia's
  * setAsCover flag, which only covers the "just uploaded" case (it inserts a
  * new mediaItems row); this reuses the existing row's id via the same
- * updateGoal query registerMedia already calls, without duplicating it.
+ * ownership-scoped query registerMedia already calls, without duplicating it.
  */
 export async function setGoalCover(goalId: string, mediaId: string): Promise<SetCoverResult> {
   const user = await getCurrentUser();
@@ -164,8 +163,8 @@ export async function setGoalCover(goalId: string, mediaId: string): Promise<Set
   const parsed = setGoalCoverSchema.safeParse({ goalId, mediaId });
   if (!parsed.success) return { ok: false, error: "Некорректные данные" };
 
-  const updated = await updateGoalQuery(user.id, parsed.data.goalId, { coverImageId: parsed.data.mediaId });
-  if (!updated) return { ok: false, error: "Цель не найдена" };
+  const updated = await setGoalCoverForUser(user.id, parsed.data.goalId, parsed.data.mediaId);
+  if (!updated) return { ok: false, error: "Изображение не найдено" };
 
   revalidatePath(`/goals/${parsed.data.goalId}`);
   revalidatePath("/");

@@ -63,7 +63,7 @@ async function main() {
   // Created only after the first query succeeds, so a failed connection
   // doesn't leave behind an empty backup-<timestamp>/ dir.
   const outdir = path.join(os.homedir(), "Backups", "goals-app", `backup-${timestamp()}`);
-  fs.mkdirSync(outdir, { recursive: true });
+  fs.mkdirSync(outdir, { recursive: true, mode: 0o700 });
 
   const manifestTables = [];
   let totalRows = 0;
@@ -73,6 +73,7 @@ async function main() {
     fs.writeFileSync(
       path.join(outdir, `${table}.json`),
       JSON.stringify(rows, jsonReplacer, 2),
+      { mode: 0o600 },
     );
     manifestTables.push({ name: table, rows: rows.length });
     totalRows += rows.length;
@@ -109,6 +110,7 @@ async function main() {
   fs.writeFileSync(
     path.join(outdir, "manifest.json"),
     JSON.stringify(manifest, jsonReplacer, 2),
+    { mode: 0o600 },
   );
 
   console.log(`total rows: ${totalRows}`);

@@ -151,3 +151,37 @@ export async function countMediaForGoal(userId: string, goalId: string): Promise
     );
   return row?.count ?? 0;
 }
+
+/** Sets a goal cover only when the selected media row is alive and attached to
+ *  that same goal. The single UPDATE keeps the ownership and association check
+ *  atomic, so a caller cannot point a goal at another user's media UUID. */
+export async function setGoalCoverForUser(
+  userId: string,
+  goalId: string,
+  mediaId: string,
+): Promise<boolean> {
+  const [updated] = await db
+    .update(goals)
+    .set({ coverImageId: mediaId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(goals.id, goalId),
+        eq(goals.userId, userId),
+        isNull(goals.deletedAt),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(mediaItems)
+            .where(
+              and(
+                eq(mediaItems.id, mediaId),
+                eq(mediaItems.goalId, goalId),
+                isNull(mediaItems.deletedAt),
+              ),
+            ),
+        ),
+      ),
+    )
+    .returning({ id: goals.id });
+  return updated !== undefined;
+}

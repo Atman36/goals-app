@@ -51,10 +51,26 @@ export function CommentsBlock({
   const [pendingPhoto, setPendingPhoto] = useState<{ path: string; previewUrl: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [notice, setNotice] = useState<string | undefined>();
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Mirrors pendingPhoto.previewUrl so the blob can be freed from callbacks
+   *  without reading possibly-stale state. */
+  const blobUrlRef = useRef<string | undefined>(undefined);
+
+  /** Frees the staged preview's blob URL and clears it — the preview was
+   *  previously dropped from state without ever being revoked (CR-032). */
+  function clearPendingPhoto() {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = undefined;
+    }
+    setPendingPhoto(null);
+  }
 
   async function handleFile(file: File) {
+    if (uploading) return;
     setError(undefined);
+    setNotice(undefined);
     if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
       setError("Файл больше 10 МБ");
       return;
@@ -66,30 +82,40 @@ export function CommentsBlock({
     }
 
     setUploading(true);
-    const signed = await createSignedUpload({
-      goalId,
-      fileName: `comment.${EXT_BY_MIME[mimeType]}`,
-      fileSize: file.size,
-      mimeType,
-    });
-    if (!signed.ok) {
+    // finally clears "Загружаем…" even when a Server Action or the storage
+    // upload throws — that state used to stick forever (CR-032).
+    try {
+      const signed = await createSignedUpload({
+        goalId,
+        fileName: `comment.${EXT_BY_MIME[mimeType]}`,
+        fileSize: file.size,
+        mimeType,
+      });
+      if (!signed.ok) {
+        setError(signed.error);
+        return;
+      }
+
+      const supabase = createClient();
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET_MEDIA)
+        .uploadToSignedUrl(signed.path, signed.token, file);
+
+      if (uploadError) {
+        setError("Не удалось загрузить файл");
+        return;
+      }
+
+      // Replacing an earlier staged photo must free that blob first.
+      clearPendingPhoto();
+      const previewUrl = URL.createObjectURL(file);
+      blobUrlRef.current = previewUrl;
+      setPendingPhoto({ path: signed.path, previewUrl });
+    } catch {
+      setError("Не удалось загрузить файл — проверьте соединение и попробуйте ещё раз");
+    } finally {
       setUploading(false);
-      setError(signed.error);
-      return;
     }
-
-    const supabase = createClient();
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_MEDIA)
-      .uploadToSignedUrl(signed.path, signed.token, file);
-    setUploading(false);
-
-    if (uploadError) {
-      setError("Не удалось загрузить файл");
-      return;
-    }
-
-    setPendingPhoto({ path: signed.path, previewUrl: URL.createObjectURL(file) });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -99,27 +125,45 @@ export function CommentsBlock({
       return;
     }
     setError(undefined);
+    setNotice(undefined);
     startTransition(async () => {
-      const result = await addComment({
-        goalId,
-        body: body.trim(),
-        media: pendingPhoto ? { path: pendingPhoto.path } : undefined,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await addComment({
+          goalId,
+          body: body.trim(),
+          media: pendingPhoto ? { path: pendingPhoto.path } : undefined,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        // The comment saved; the photo may still have failed on its own — say
+        // so instead of reporting a clean success (CR-019).
+        if (result.warning) setNotice(result.warning);
+        setBody("");
+        clearPendingPhoto();
+        router.refresh();
+      } catch {
+        setError("Не удалось отправить комментарий — попробуйте ещё раз");
       }
-      setBody("");
-      setPendingPhoto(null);
-      router.refresh();
     });
   }
 
   function handleDelete(commentId: string) {
     if (typeof window !== "undefined" && !window.confirm("Удалить комментарий?")) return;
+    setError(undefined);
+    setNotice(undefined);
     startTransition(async () => {
-      const result = await deleteComment(goalId, commentId);
-      if (result.ok) router.refresh();
+      try {
+        const result = await deleteComment(goalId, commentId);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setError("Не удалось удалить комментарий — попробуйте ещё раз");
+      }
     });
   }
 
@@ -194,6 +238,7 @@ export function CommentsBlock({
           </Button>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
       </form>
     </div>
   );

@@ -50,7 +50,9 @@ export async function DELETE(
   if (!itemIdParsed.success) return jsonError("Некорректные данные", 400);
   const itemId = itemIdParsed.data;
 
-  await softDeleteChecklistItem(user.id, itemId);
+  const deleted = await softDeleteChecklistItem(user.id, itemId);
+  if (!deleted) return jsonError("Пункт не найден", 404);
+
   log.info({ itemId }, "checklist item soft-deleted");
 
   return jsonData({ ok: true });

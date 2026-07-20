@@ -1,6 +1,11 @@
+import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
-import { listContributions, insertContributionIdempotent } from "@/lib/db/queries/contributions";
+import {
+  listContributions,
+  insertContributionIdempotent,
+  contributionPayloadsMatch,
+} from "@/lib/db/queries/contributions";
 import { contributionSchema, contributionPostBodySchema } from "@/lib/validators/contribution";
 import { goalIdSchema } from "@/lib/validators/goal";
 import { track } from "@/lib/analytics/events";
@@ -11,6 +16,20 @@ function amountBucket(amountMajorAbs: number): "<1k" | "1k-10k" | ">10k" {
   if (amountMajorAbs < 1000) return "<1k";
   if (amountMajorAbs <= 10000) return "1k-10k";
   return ">10k";
+}
+
+/**
+ * Stable machine-readable code for "this idempotency key is already bound to a
+ * different payload". The client keys its recovery on this string, so it must not
+ * change. Sent alongside the standard `error` envelope field.
+ *
+ * Not exported: Next.js route modules only allow handler/config exports. The client
+ * copy lives in components/goals/quick-add-sheet.tsx and is pinned by tests/.
+ */
+const IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused";
+
+function jsonConflict(message: string, code: string) {
+  return NextResponse.json({ error: message, code }, { status: 409 });
 }
 
 export async function GET(
@@ -77,21 +96,44 @@ export async function POST(
     return jsonError("Проверьте поля формы", 400);
   }
 
-  const created = await insertContributionIdempotent(user.id, {
+  const attempted = {
     id: parsed.data.id,
     goalId: parsed.data.goalId,
     amount: parsed.data.amount,
     note: parsed.data.note ?? null,
     occurredAt: parsed.data.occurredAt.toISOString().slice(0, 10),
-  });
+  };
 
-  if (!created) {
-    // Goal ownership is already confirmed above, so a null result here can
-    // only mean the client-generated id was already inserted — an idempotent
-    // replay of a retried request, not an error (PRD §3.3.1/§7).
-    log.info({ goalId, contributionId: parsed.data.id }, "duplicate contribution id — idempotent no-op");
-    return jsonData({ duplicate: true, contribution: null });
+  const result = await insertContributionIdempotent(user.id, attempted);
+
+  if (result.status === "goal_not_found") {
+    // Raced with a delete between the ownership check above and the insert.
+    return jsonError("Цель не найдена", 404);
   }
+
+  if (result.status === "conflict") {
+    // The client-generated id is already taken. Only a byte-identical payload is a
+    // genuine retry of the same request; anything else is a reused key whose new data
+    // would otherwise be silently discarded (CR-014). A key we cannot see in user
+    // scope (another owner, deleted goal/row) is likewise never treated as a replay.
+    if (!result.existing || !contributionPayloadsMatch(result.existing, attempted)) {
+      log.warn(
+        { goalId, contributionId: parsed.data.id, resolvable: Boolean(result.existing) },
+        "contribution idempotency key reused with a different payload",
+      );
+      return jsonConflict(
+        "Этот взнос уже был сохранён с другими данными. Обновите страницу и попробуйте ещё раз.",
+        IDEMPOTENCY_KEY_REUSED,
+      );
+    }
+
+    // Exact replay: return the row that was actually stored, so the client reconciles
+    // against the truth rather than its own optimistic copy (PRD §3.3.1/§7).
+    log.info({ goalId, contributionId: parsed.data.id }, "exact idempotent replay of contribution");
+    return jsonData({ duplicate: true, contribution: result.existing });
+  }
+
+  const created = result.contribution;
 
   const amountMajorAbs = Math.abs(Number(magnitude)) / 100;
   track({

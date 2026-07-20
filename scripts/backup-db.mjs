@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import postgres from "postgres";
 
@@ -55,55 +56,82 @@ function gitCommit() {
 const sql = postgres(connectionString, { max: 1, prepare: false });
 
 async function main() {
-  const tableRows = await sql`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
-  `;
-  const tables = tableRows.map((r) => r.tablename);
+  // CR-029: every read below runs inside ONE `REPEATABLE READ READ ONLY`
+  // transaction, so all tables are dumped from a single MVCC snapshot.
+  // Previously each `SELECT *` ran autocommitted, meaning a write landing
+  // mid-dump could put table A pre-change and table B post-change into the
+  // same backup — e.g. a goal without its contributions, or contributions
+  // referencing a goal that isn't in goals.json. That skew is silent and only
+  // surfaces at restore time. This script runs immediately before schema
+  // migrations, which is exactly when a corrupt backup is least survivable.
+  //
+  // READ ONLY is belt-and-braces: it makes the server reject any accidental
+  // write from this script. `max: 1` means the pool has a single connection,
+  // so there is no risk of a query escaping the transaction onto another one.
+  const { outdir, manifestTables, totalRows, drizzleMigrations } = await sql.begin(
+    "ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    async (tx) => {
+      const tableRows = await tx`
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
+      `;
+      const tables = tableRows.map((r) => r.tablename);
 
-  // Created only after the first query succeeds, so a failed connection
-  // doesn't leave behind an empty backup-<timestamp>/ dir.
-  const outdir = path.join(os.homedir(), "Backups", "goals-app", `backup-${timestamp()}`);
-  fs.mkdirSync(outdir, { recursive: true, mode: 0o700 });
+      // Created only after the first query succeeds, so a failed connection
+      // doesn't leave behind an empty backup-<timestamp>/ dir.
+      const dir = path.join(os.homedir(), "Backups", "goals-app", `backup-${timestamp()}`);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-  const manifestTables = [];
-  let totalRows = 0;
+      const dumped = [];
+      let rowCount = 0;
 
-  for (const table of tables) {
-    const rows = await sql`SELECT * FROM ${sql(table)}`;
-    fs.writeFileSync(
-      path.join(outdir, `${table}.json`),
-      JSON.stringify(rows, jsonReplacer, 2),
-      { mode: 0o600 },
-    );
-    manifestTables.push({ name: table, rows: rows.length });
-    totalRows += rows.length;
-    console.log(`${table} → ${rows.length}`);
-  }
+      for (const table of tables) {
+        const rows = await tx`SELECT * FROM ${tx(table)}`;
+        const json = JSON.stringify(rows, jsonReplacer, 2);
+        // Hash the exact bytes written, so the manifest can be used to verify
+        // a backup wasn't truncated or corrupted between now and a restore.
+        const sha256 = crypto.createHash("sha256").update(json).digest("hex");
+        fs.writeFileSync(path.join(dir, `${table}.json`), json, { mode: 0o600 });
+        dumped.push({ name: table, rows: rows.length, bytes: Buffer.byteLength(json), sha256 });
+        rowCount += rows.length;
+        console.log(`${table} → ${rows.length}`);
+      }
 
-  // Read-only bookkeeping probe: records whether drizzle-kit's migration
-  // ledger exists yet. Absent is expected pre-migration and is not a
-  // failure — the next task's apply-path decision branches on this.
-  let drizzleMigrations = "absent";
-  try {
-    const rows = await sql`
-      SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at
-    `;
-    drizzleMigrations = rows.map((r) => ({
-      id: r.id,
-      hash: r.hash,
-      created_at: r.created_at,
-    }));
-  } catch (err) {
-    if (err && (err.code === "42P01" || err.code === "3F000")) {
-      drizzleMigrations = "absent";
-    } else {
-      throw err;
-    }
-  }
+      // Read-only bookkeeping probe: records whether drizzle-kit's migration
+      // ledger exists yet. Absent is expected pre-migration and is not a
+      // failure — the next task's apply-path decision branches on this.
+      //
+      // Existence is checked with to_regclass rather than by catching the
+      // "relation does not exist" error: inside a transaction that error would
+      // abort the whole snapshot, taking the backup down with it.
+      let migrations = "absent";
+      const [probe] = await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS reg`;
+      if (probe?.reg) {
+        const rows = await tx`
+          SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at
+        `;
+        migrations = rows.map((r) => ({
+          id: r.id,
+          hash: r.hash,
+          created_at: r.created_at,
+        }));
+      }
+
+      return {
+        outdir: dir,
+        manifestTables: dumped,
+        totalRows: rowCount,
+        drizzleMigrations: migrations,
+      };
+    },
+  );
 
   const manifest = {
     createdAtUtc: new Date().toISOString(),
     gitCommit: gitCommit(),
+    // Recorded so a restore can tell a consistent snapshot apart from a dump
+    // taken by an older version of this script.
+    snapshot: "single REPEATABLE READ READ ONLY transaction",
+    hashAlgorithm: "sha256",
     tables: manifestTables,
     drizzleMigrations,
   };

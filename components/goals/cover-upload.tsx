@@ -54,6 +54,27 @@ export function CoverUpload({
   const [status, setStatus] = useState<"idle" | "uploading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | undefined>();
   const [dragActive, setDragActive] = useState(false);
+  /** The blob: URL currently shown, if any. Tracked separately from previewUrl
+   *  because previewUrl may also hold initialPreviewUrl (a signed http URL),
+   *  which must never be passed to revokeObjectURL. */
+  const blobUrlRef = useRef<string | undefined>(undefined);
+
+  function showBlobPreview(file: File) {
+    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    const url = URL.createObjectURL(file);
+    blobUrlRef.current = url;
+    setPreviewUrl(url);
+  }
+
+  /** Drops the local preview and frees its blob, falling back to whatever
+   *  cover the goal already had. Called whenever an upload does not finish. */
+  function discardBlobPreview() {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = undefined;
+    }
+    setPreviewUrl(initialPreviewUrl);
+  }
 
   async function handleFile(file: File) {
     if (status === "uploading") return;
@@ -71,34 +92,46 @@ export function CoverUpload({
     }
 
     setStatus("uploading");
-    setPreviewUrl(URL.createObjectURL(file));
+    showBlobPreview(file);
 
-    const signed = await createSignedUpload({
-      goalId,
-      fileName: `cover.${EXT_BY_MIME[mimeType]}`,
-      fileSize: file.size,
-      mimeType,
-    });
+    // `succeeded` drives the finally block: a throw from either await below
+    // (network error, Server Action failure) previously left status pinned at
+    // "uploading" forever and leaked the blob URL (CR-032).
+    let succeeded = false;
+    try {
+      const signed = await createSignedUpload({
+        goalId,
+        fileName: `cover.${EXT_BY_MIME[mimeType]}`,
+        fileSize: file.size,
+        mimeType,
+      });
 
-    if (!signed.ok) {
-      setStatus("error");
-      setError(signed.error);
-      return;
+      if (!signed.ok) {
+        setError(signed.error);
+        return;
+      }
+
+      const supabase = createClient();
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET_MEDIA)
+        .uploadToSignedUrl(signed.path, signed.token, file);
+
+      if (uploadError) {
+        setError("Не удалось загрузить файл");
+        return;
+      }
+
+      succeeded = true;
+      setStatus("ready");
+      onFileReady({ path: signed.path, mimeType });
+    } catch {
+      setError("Не удалось загрузить файл — проверьте соединение и попробуйте ещё раз");
+    } finally {
+      if (!succeeded) {
+        setStatus("error");
+        discardBlobPreview();
+      }
     }
-
-    const supabase = createClient();
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_MEDIA)
-      .uploadToSignedUrl(signed.path, signed.token, file);
-
-    if (uploadError) {
-      setStatus("error");
-      setError("Не удалось загрузить файл");
-      return;
-    }
-
-    setStatus("ready");
-    onFileReady({ path: signed.path, mimeType });
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {

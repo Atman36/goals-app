@@ -35,8 +35,17 @@ export async function insertComment(
   return row;
 }
 
-export async function softDeleteComment(userId: string, commentId: string): Promise<void> {
-  await db
+/**
+ * Returns the soft-deleted row's id, or null when nothing matched (unknown id,
+ * already deleted, or not owned by userId). The caller must not report success
+ * on null — the UPDATE is the ownership check, so a silent no-op is exactly the
+ * case a truthful action has to surface (CR-033).
+ */
+export async function softDeleteComment(
+  userId: string,
+  commentId: string,
+): Promise<{ id: string } | null> {
+  const [deleted] = await db
     .update(comments)
     .set({ deletedAt: new Date() })
     .where(
@@ -56,5 +65,8 @@ export async function softDeleteComment(userId: string, commentId: string): Prom
             ),
         ),
       ),
-    );
+    )
+    .returning({ id: comments.id });
+
+  return deleted ?? null;
 }

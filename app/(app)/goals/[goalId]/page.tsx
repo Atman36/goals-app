@@ -15,7 +15,7 @@ import { listGoalRevisions } from "@/lib/db/queries/goal-revisions";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { formatMoney } from "@/lib/utils/money";
 import { pluralRu } from "@/lib/utils/plural";
-import type { Currency } from "@/lib/validators/goal";
+import { canTransitionGoalStatus, type Currency } from "@/lib/validators/goal";
 import { Button } from "@/components/ui/button";
 import { FinancialProgressHeader, MarkAchievedButton, QuickAddSheet } from "@/components/goals/quick-add-sheet";
 import { CelebrationOverlay } from "@/components/goals/celebration-overlay";
@@ -114,7 +114,9 @@ export default async function GoalPage({
   });
 
   const deadlineLabel = format(parseISO(goal.deadline), "d MMMM yyyy", { locale: ru });
-  const isFocus = user.focusGoalId === goal.id;
+  // Focus only ever applies to an active goal (getFocusGoal filters on status),
+  // so the raw column comparison alone would light up on an archived goal.
+  const isFocus = user.focusGoalId === goal.id && goal.status === "active";
 
   // Celebration screen (?celebrate=1 after marking achieved) — PRD §9 Phase 2.
   const showCelebration = sp.celebrate === "1" && goal.status === "achieved";
@@ -144,7 +146,12 @@ export default async function GoalPage({
             nativeButton={false}
             render={<Link href={`/goals/${goal.id}/edit`}>Редактировать</Link>}
           />
-          {goal.status !== "achieved" ? <MarkAchievedButton goalId={goal.id} /> : null}
+          {/* Driven by the transition matrix, not `!== "achieved"`: an archived
+              goal cannot be marked achieved (revive it first), so offering the
+              button there was offering an action the server now rejects. */}
+          {canTransitionGoalStatus(goal.status, "achieved") ? (
+            <MarkAchievedButton goalId={goal.id} />
+          ) : null}
         </div>
       </div>
 

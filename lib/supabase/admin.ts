@@ -1,4 +1,11 @@
-// SERVER ONLY — service-role key; never import from a Client Component
+// SERVER ONLY — service-role key; never import from a Client Component.
+//
+// This is enforced, not just documented (CR-034): `server-only` makes the
+// build fail if this module is ever pulled into a client bundle. That guard
+// matters here specifically because lib/supabase/client.ts — the PUBLIC anon
+// client that "use client" components legitimately import — sits in this same
+// directory, one autocomplete slip away.
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 /**

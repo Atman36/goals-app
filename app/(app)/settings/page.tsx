@@ -2,7 +2,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingsForm } from "./settings-form";
 
-// PRD §3.8 profile: name, default currency, theme, weekly reflection day.
+// PRD §3.8 profile: name, default currency, theme. The weekly-reflection-day
+// control was removed as a false promise — see settings-form.tsx (CR-024).
 // Server component; the mutable fields live in the client-side
 // settings-form.tsx (needs interactivity for the instant theme toggle).
 export default async function SettingsPage() {
@@ -24,7 +25,7 @@ export default async function SettingsPage() {
               inputs) — without a key, a post-save revalidation re-renders this
               component in place and React leaves the already-mounted <select>s
               showing their pre-save values instead of the just-saved ones. */}
-          <SettingsForm key={`${user.name}-${user.defaultCurrency}-${user.theme}-${user.reflectionDay}`} user={user} />
+          <SettingsForm key={`${user.name}-${user.defaultCurrency}-${user.theme}`} user={user} />
         </CardContent>
       </Card>
     </div>

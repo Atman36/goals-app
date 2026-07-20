@@ -54,6 +54,43 @@ interface ContributionPostResponse {
   };
 }
 
+/** Must match the `code` the contributions route sends with its 409. */
+const IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused";
+
+/**
+ * How a submit ended, from the idempotency key's point of view.
+ * - `created`   — the server stored this payload under the key.
+ * - `replayed`  — the key already held a byte-identical payload (exact replay).
+ * - `key_reused`— the key already held a DIFFERENT payload; this data was not stored.
+ * - `unknown`   — network error / timeout / 5xx: the server may or may not have stored it.
+ */
+export type ContributionSubmitOutcome = "created" | "replayed" | "key_reused" | "unknown";
+
+/**
+ * Idempotency-key rotation contract (CR-025).
+ *
+ * Rotate after every outcome the SERVER settled — created, exact replay, and reused-key
+ * conflict alike. Once the server has bound a key, reusing it can only ever produce a
+ * replay or a 409, so a pinned key would silently discard every later contribution.
+ *
+ * Keep the key only when the outcome is genuinely unknown, which is precisely the case
+ * a retry must be idempotent for.
+ */
+export function shouldRotateIdempotencyKey(outcome: ContributionSubmitOutcome): boolean {
+  return outcome !== "unknown";
+}
+
+/** Carries the outcome so onError can apply the same rotation contract as onSuccess. */
+class ContributionSubmitError extends Error {
+  readonly outcome: ContributionSubmitOutcome;
+
+  constructor(outcome: ContributionSubmitOutcome, message: string) {
+    super(message);
+    this.name = "ContributionSubmitError";
+    this.outcome = outcome;
+  }
+}
+
 /** Right-column ring + "X из Y" metric — reactive to the same contributions
  *  cache QuickAddSheet writes to (shared TanStack Query key), so a
  *  successful/optimistic quick-add updates this without prop drilling. */
@@ -195,8 +232,20 @@ export function QuickAddSheet({
           isPreset: selectedPreset !== null,
         }),
       });
-      if (!res.ok) throw new Error("Не удалось сохранить взнос");
-      return res.json() as Promise<ContributionPostResponse>;
+      const body = (await res.json().catch(() => null)) as
+        | (Partial<ContributionPostResponse> & { code?: string })
+        | null;
+
+      if (res.status === 409 && body?.code === IDEMPOTENCY_KEY_REUSED) {
+        throw new ContributionSubmitError(
+          "key_reused",
+          "Этот взнос не сохранён: ключ уже занят другими данными. Попробуйте ещё раз.",
+        );
+      }
+      if (!res.ok || !body?.data) {
+        throw new ContributionSubmitError("unknown", "Не удалось сохранить взнос");
+      }
+      return body as ContributionPostResponse;
     },
     onMutate: async () => {
       if (!idRef.current) idRef.current = crypto.randomUUID();
@@ -219,14 +268,38 @@ export function QuickAddSheet({
 
       return { previous, prevSaved };
     },
-    onError: (_err, _vars, context) => {
-      setError("Не удалось сохранить взнос. Попробуйте ещё раз.");
+    onError: (err, _vars, context) => {
+      const outcome: ContributionSubmitOutcome =
+        err instanceof ContributionSubmitError ? err.outcome : "unknown";
+
+      // The write did not land — drop the optimistic entry so the UI stops claiming it did.
       if (context?.previous) {
         queryClient.setQueryData(contributionsQueryKey(goalId), context.previous);
       }
+
+      setError(
+        outcome === "key_reused"
+          ? "Этот взнос не сохранён — данные разошлись с уже сохранёнными. Проверьте список и попробуйте ещё раз."
+          : "Не удалось сохранить взнос. Попробуйте ещё раз.",
+      );
+
+      // A reused key is settled server-side: retrying with it can never store anything.
+      if (shouldRotateIdempotencyKey(outcome)) idRef.current = null;
     },
     onSuccess: (result, _vars, context) => {
-      if (result.data.duplicate) return;
+      const outcome: ContributionSubmitOutcome = result.data.duplicate ? "replayed" : "created";
+
+      // Rotate FIRST and unconditionally: an early return here is what pinned the key
+      // forever and silently dropped every later contribution (CR-025).
+      if (shouldRotateIdempotencyKey(outcome)) idRef.current = null;
+
+      // An exact replay is already counted in the stored total, so re-running the
+      // threshold math would double-count it and fire a bogus celebration. The row is
+      // genuinely saved though, so the form still closes and resets as a success.
+      if (outcome === "replayed") {
+        resetForm();
+        return;
+      }
 
       const prevSaved = context?.prevSaved ?? initialAmount;
       const prevPercent = calcFinancialProgress(prevSaved, targetAmount) * 100;
@@ -241,19 +314,24 @@ export function QuickAddSheet({
         setConfettiVariant("small");
       }
 
-      setOpen(false);
-      setSelectedPreset(null);
-      setCustomAmount("");
-      setNote("");
-      setDate(todayIso());
-      setIsNegative(false);
-      setError(undefined);
-      idRef.current = null;
+      resetForm();
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: contributionsQueryKey(goalId) });
     },
   });
+
+  /** Post-save cleanup. Does NOT touch idRef — rotation is owned solely by the
+   *  onSuccess/onError contract above (shouldRotateIdempotencyKey). */
+  function resetForm() {
+    setOpen(false);
+    setSelectedPreset(null);
+    setCustomAmount("");
+    setNote("");
+    setDate(todayIso());
+    setIsNegative(false);
+    setError(undefined);
+  }
 
   function handlePresetClick(value: number) {
     setSelectedPreset(value);

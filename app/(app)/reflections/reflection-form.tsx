@@ -53,9 +53,13 @@ const initialState: ReflectionState = { status: "idle" };
 export function ReflectionForm({
   current,
   prevPromise,
+  expectedWeekStart,
 }: {
   current: Reflection | null;
   prevPromise: string | null;
+  /** The week-start key this form was rendered for. Posted back so the action
+   *  can refuse a submit that crossed the week boundary (CR-030). */
+  expectedWeekStart: string;
 }) {
   const [state, formAction, isPending] = useActionState(saveReflection, initialState);
 
@@ -79,6 +83,8 @@ export function ReflectionForm({
       ) : null}
       <CardContent>
         <form action={formAction} className="flex flex-col gap-4">
+          <input type="hidden" name="expectedWeekStart" value={expectedWeekStart} />
+
           {prevPromise ? (
             <div className="flex flex-col gap-2 rounded-2xl border border-input p-3">
               <p className="text-sm font-medium">Обещание прошлой недели</p>
@@ -136,7 +142,24 @@ export function ReflectionForm({
             </p>
           ) : null}
 
-          <Button type="submit" disabled={isPending} className="self-start">
+          {/* CR-030: the week rolled over between render and submit. Nothing was
+              written — the typed answers are still in the fields, so the user
+              can copy them out before reloading into the new week's form. */}
+          {state.status === "stale" ? (
+            <div className="flex flex-col items-start gap-2 rounded-2xl border border-destructive p-3">
+              <p className="text-sm text-destructive">{state.message}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => window.location.reload()}
+                className="self-start"
+              >
+                Обновить страницу
+              </Button>
+            </div>
+          ) : null}
+
+          <Button type="submit" disabled={isPending || state.status === "stale"} className="self-start">
             {isPending ? "Сохраняем…" : "Сохранить рефлексию"}
           </Button>
         </form>

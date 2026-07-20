@@ -1,3 +1,8 @@
+// SERVER ONLY — reaches the service-role Supabase client. Build-enforced
+// (CR-034) rather than documented-only. Note this does NOT constrain
+// lib/validators/media.ts, whose constants are re-exported below and stay
+// freely importable from client components.
+import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   MAX_UPLOAD_BYTES,

@@ -42,6 +42,12 @@ export function GoalForm(props: GoalFormProps) {
   const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | undefined>();
   const [pendingCover, setPendingCover] = useState<CoverUploadResult | undefined>();
+  /** Set when the goal itself saved but its cover did not attach. Holds the
+   *  saved goal's id so the user can continue to it without re-submitting the
+   *  form (a resubmit in create mode would make a second goal). */
+  const [coverWarning, setCoverWarning] = useState<
+    { message: string; goalId: string } | undefined
+  >();
 
   const kind = props.mode === "create" ? props.kind : props.goal.kind;
 
@@ -86,6 +92,7 @@ export function GoalForm(props: GoalFormProps) {
 
   const onSubmit = handleSubmit((values) => {
     setFormError(undefined);
+    setCoverWarning(undefined);
 
     if (props.mode === "create" && props.onCollect) {
       props.onCollect(values, pendingCover ?? null);
@@ -103,12 +110,23 @@ export function GoalForm(props: GoalFormProps) {
         return;
       }
 
+      // The goal itself is already saved at this point, so a failed cover must
+      // not read as total failure — but it must not be swallowed either: the
+      // result used to be discarded and the user landed on a goal with no
+      // cover and no explanation (CR-019).
       if (pendingCover) {
-        await registerMedia({
+        const registered = await registerMedia({
           goalId: result.goalId,
           path: pendingCover.path,
           setAsCover: true,
         });
+        if (!registered.ok) {
+          setCoverWarning({
+            message: `Цель сохранена, но обложка не прикрепилась: ${registered.error}`,
+            goalId: result.goalId,
+          });
+          return;
+        }
       }
 
       // Both create and edit land on the goal page (PRD §3.2) — the action
@@ -231,7 +249,20 @@ export function GoalForm(props: GoalFormProps) {
 
       {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isPending}>
+      {coverWarning ? (
+        <div className="flex flex-col gap-2 rounded-2xl bg-muted/50 p-3">
+          <p className="text-sm text-muted-foreground">{coverWarning.message}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.push(`/goals/${coverWarning.goalId}`)}
+          >
+            Перейти к цели
+          </Button>
+        </div>
+      ) : null}
+
+      <Button type="submit" size="lg" className="w-full" disabled={isPending || !!coverWarning}>
         {isPending
           ? "Сохраняем…"
           : props.mode === "edit"

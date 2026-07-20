@@ -45,7 +45,14 @@ export default async function ReflectionsPage() {
         ) : null}
       </div>
 
-      <ReflectionForm current={current} prevPromise={prev?.promise ?? null} />
+      {/* expectedWeekStart pins the form to the week it was rendered for, so a
+          submit that lands after the week boundary is refused instead of being
+          filed under the next week (CR-030). */}
+      <ReflectionForm
+        current={current}
+        prevPromise={prev?.promise ?? null}
+        expectedWeekStart={weekStart}
+      />
 
       {history.length > 0 ? (
         <section className="flex flex-col gap-3">

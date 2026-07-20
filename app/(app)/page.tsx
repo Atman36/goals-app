@@ -131,8 +131,16 @@ export default async function DashboardPage({
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* `goal.status === "active"` matches getFocusGoal's own filter — the
+              raw focus_goal_id column can still point at a goal that has since
+              been archived or achieved, which would light up the badge for a
+              goal /today no longer treats as the focus. */}
           {goals.map((goal) => (
-            <GoalCard key={goal.id} goal={goal} isFocus={goal.id === user.focusGoalId} />
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              isFocus={goal.id === user.focusGoalId && goal.status === "active"}
+            />
           ))}
         </div>
       )}

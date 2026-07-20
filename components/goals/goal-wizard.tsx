@@ -68,6 +68,9 @@ export function GoalWizard({
   } | null>(null);
   const [concordance, setConcordance] = useState<SelfConcordanceAnswers | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Set only when the goal was created but a follow-up step failed, so a
+  // retry continues to the existing goal instead of creating a duplicate.
+  const [createdGoalId, setCreatedGoalId] = useState<string | null>(null);
 
   // Template prefill for GoalForm — deadline suggestion = today + the
   // template's offset (T5 decision), computed once per template on the
@@ -122,6 +125,14 @@ export function GoalWizard({
     setCreateError(null);
 
     startTransition(async () => {
+      // The goal may already exist from a previous attempt whose *cover*
+      // failed (see below). Re-running createGoal would make a second goal,
+      // so resume by navigating to the one we already created.
+      if (createdGoalId) {
+        router.push(`/goals/${createdGoalId}`);
+        return;
+      }
+
       const result = await createGoal({
         ...basics.values,
         selfConcordance: concordance ?? undefined,
@@ -134,11 +145,20 @@ export function GoalWizard({
       }
 
       if (basics.cover) {
-        await registerMedia({
+        const media = await registerMedia({
           goalId: result.goalId,
           path: basics.cover.path,
           setAsCover: true,
         });
+
+        if (!media.ok) {
+          // The goal is already saved — report the cover failure truthfully
+          // instead of navigating as if everything succeeded. Pressing the
+          // button again now just continues to the goal.
+          setCreatedGoalId(result.goalId);
+          setCreateError(`Цель сохранена, но обложка не прикрепилась: ${media.error}`);
+          return;
+        }
       }
 
       await seedStarterChecklist(result.goalId);

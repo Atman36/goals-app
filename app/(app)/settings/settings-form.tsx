@@ -7,18 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-// Пн–Вс order for display; values match users.reflection_day's own contract
-// (0=Sunday..6=Saturday), so Monday is 1 and Sunday is 0.
-const REFLECTION_DAYS: { value: number; label: string }[] = [
-  { value: 1, label: "Понедельник" },
-  { value: 2, label: "Вторник" },
-  { value: 3, label: "Среда" },
-  { value: 4, label: "Четверг" },
-  { value: 5, label: "Пятница" },
-  { value: 6, label: "Суббота" },
-  { value: 0, label: "Воскресенье" },
-];
-
+// CR-024: the "День еженедельной рефлексии" <select> used to live here. It was
+// inert — users.reflection_day was written by updateProfile and read back only
+// to seed this control, while the week boundary is hardcoded Monday-anchored
+// (lib/utils/week-keys.ts) everywhere that matters: reflections, streaks and
+// the trajectory timeline. Honouring the setting would have re-keyed already
+// stored reflections (a row saved as week "2026-07-06" would stop resolving
+// once the anchor moved), which the plan forbids, so the false promise is
+// removed from the UI instead. The column is left untouched — see
+// lib/actions/profile.ts.
 const SELECT_CLASSNAME =
   "h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
@@ -63,22 +60,6 @@ export function SettingsForm({ user }: { user: User }) {
           >
             <option value="light">Светлая</option>
             <option value="dark">Тёмная</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="reflectionDay">День еженедельной рефлексии</Label>
-          <select
-            id="reflectionDay"
-            name="reflectionDay"
-            defaultValue={user.reflectionDay ?? 1}
-            className={SELECT_CLASSNAME}
-          >
-            {REFLECTION_DAYS.map((day) => (
-              <option key={day.value} value={day.value}>
-                {day.label}
-              </option>
-            ))}
           </select>
         </div>
 

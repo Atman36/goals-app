@@ -74,47 +74,75 @@ export function GoalGallery({
     setError(undefined);
     setUploading(true);
 
-    for (const file of Array.from(files)) {
-      if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
-        setError("Файл больше 10 МБ — пропущен");
-        continue;
-      }
-      const mimeType = await detectImageMime(file);
-      if (!mimeType) {
-        setError("Поддерживаются только JPG, PNG и WEBP");
-        continue;
-      }
+    // Per-file failures are collected instead of overwriting one another, so a
+    // multi-file drop reports every image that did not make it. The outer
+    // finally guarantees the "Загрузка…" state is cleared even if something
+    // throws (CR-032).
+    const failures: string[] = [];
 
-      const signed = await createSignedUpload({
-        goalId,
-        fileName: `gallery.${EXT_BY_MIME[mimeType]}`,
-        fileSize: file.size,
-        mimeType,
-      });
-      if (!signed.ok) {
-        setError(signed.error);
-        continue;
-      }
+    try {
+      for (const file of Array.from(files)) {
+        try {
+          if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+            failures.push(`${file.name}: больше 10 МБ`);
+            continue;
+          }
+          const mimeType = await detectImageMime(file);
+          if (!mimeType) {
+            failures.push(`${file.name}: поддерживаются только JPG, PNG и WEBP`);
+            continue;
+          }
 
-      const supabase = createClient();
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET_MEDIA)
-        .uploadToSignedUrl(signed.path, signed.token, file);
-      if (uploadError) {
-        setError("Не удалось загрузить файл");
-        continue;
-      }
+          const signed = await createSignedUpload({
+            goalId,
+            fileName: `gallery.${EXT_BY_MIME[mimeType]}`,
+            fileSize: file.size,
+            mimeType,
+          });
+          if (!signed.ok) {
+            failures.push(`${file.name}: ${signed.error}`);
+            continue;
+          }
 
-      await registerMedia({ goalId, path: signed.path });
+          const supabase = createClient();
+          const { error: uploadError } = await supabase.storage
+            .from(BUCKET_MEDIA)
+            .uploadToSignedUrl(signed.path, signed.token, file);
+          if (uploadError) {
+            failures.push(`${file.name}: не удалось загрузить`);
+            continue;
+          }
+
+          // The upload only reaches storage; the row that makes it a gallery
+          // image is this call, so an ignored failure showed a success that
+          // never happened (CR-019).
+          const registered = await registerMedia({ goalId, path: signed.path });
+          if (!registered.ok) {
+            failures.push(`${file.name}: ${registered.error}`);
+          }
+        } catch {
+          failures.push(`${file.name}: непредвиденная ошибка`);
+        }
+      }
+    } finally {
+      setUploading(false);
+      setError(failures.length > 0 ? failures.join("; ") : undefined);
+      router.refresh();
     }
-
-    setUploading(false);
-    router.refresh();
   }
 
   async function handleSetCover(mediaId: string) {
-    const result = await setGoalCover(goalId, mediaId);
-    if (result.ok) router.refresh();
+    try {
+      const result = await setGoalCover(goalId, mediaId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setError(undefined);
+      router.refresh();
+    } catch {
+      setError("Не удалось обновить обложку");
+    }
   }
 
   const hero = images[0];

@@ -124,15 +124,48 @@ async function canAttachMedia(
   return false;
 }
 
+/**
+ * Outcome of insertMediaItem. `duplicate` means the exact storage path was
+ * already registered as a live row owned by this user — the insert is
+ * idempotent (the same uploaded object must never yield two gallery rows,
+ * CR-009), so the caller gets the pre-existing row instead of an error.
+ * `conflict` means the path is taken but the row is not usable by this caller
+ * (foreign or soft-deleted), which is a real failure and must be reported.
+ */
+export type InsertMediaResult =
+  | { status: "inserted"; item: MediaItem }
+  | { status: "duplicate"; item: MediaItem }
+  | { status: "conflict" }
+  | { status: "forbidden" };
+
 export async function insertMediaItem(
   userId: string,
   values: NewMediaItem,
-): Promise<MediaItem | null> {
+): Promise<InsertMediaResult> {
   const allowed = await canAttachMedia(userId, values);
-  if (!allowed) return null;
+  if (!allowed) return { status: "forbidden" };
 
-  const [row] = await db.insert(mediaItems).values(values).returning();
-  return row;
+  // No conflict target: the partial unique index on storage_path
+  // (drizzle/0007_media_storage_path_unique.sql) covers live rows only, and a
+  // target-less ON CONFLICT DO NOTHING arbitrates over every unique index —
+  // including partial ones — so this stays correct (just never idempotent)
+  // even before that migration is applied by hand.
+  const [row] = await db.insert(mediaItems).values(values).onConflictDoNothing().returning();
+  if (row) return { status: "inserted", item: row };
+
+  const [existing] = await db
+    .select(getTableColumns(mediaItems))
+    .from(mediaItems)
+    .where(
+      and(
+        eq(mediaItems.storagePath, values.storagePath),
+        isNull(mediaItems.deletedAt),
+        ownedByUser(userId),
+      ),
+    )
+    .limit(1);
+
+  return existing ? { status: "duplicate", item: existing } : { status: "conflict" };
 }
 
 export async function softDeleteMediaItem(userId: string, mediaId: string): Promise<void> {

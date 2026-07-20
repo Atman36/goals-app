@@ -3,19 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  insertGoal,
+  insertGoalWithWoop,
   softDeleteGoal,
   setGoalStatus,
   getGoalWithDetails,
   hasContributions,
   type GoalWithProgress,
+  type SetGoalStatusResult,
 } from "@/lib/db/queries/goals";
-import { insertWoopEntry } from "@/lib/db/queries/woop";
+import { setUserFocusGoal } from "@/lib/db/queries/users";
 import { updateGoalWithRevision } from "@/lib/db/queries/goal-revisions";
-import type { NewGoal } from "@/lib/db/schema";
+import type { NewGoal, User } from "@/lib/db/schema";
 import { goalSchema, goalUpdateSchema, goalIdSchema, type GoalInput } from "@/lib/validators/goal";
 import { woopInputSchema, type WoopInput } from "@/lib/validators/woop";
-import { toMinorUnits, calcFinancialProgress } from "@/lib/utils/money";
+import { parseMajorAmountToMinor, calcFinancialProgress } from "@/lib/utils/money";
 import type { SelfConcordanceAnswers } from "@/lib/utils/concordance";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
@@ -30,19 +31,33 @@ export type SimpleActionResult = { ok: true } | { ok: false; error: string };
 const GENERIC_NOT_FOUND_ERROR = "Цель не найдена";
 const GENERIC_VALIDATION_ERROR = "Проверьте поля формы";
 const GENERIC_INVALID_ID_ERROR = "Некорректные данные";
+const ILLEGAL_TRANSITION_ERROR = "Это действие недоступно для цели в текущем статусе";
 
-/** Parses a major-unit amount string into a non-negative integer number, or
- *  null if it isn't one. The client schema already enforces this shape, but
- *  the action is a reachable POST endpoint on its own — this guards
- *  `toMinorUnits` from being handed NaN/garbage (which throws) so malformed
- *  input turns into the normal `{ok:false}` validation-error path instead of
- *  an unhandled exception. */
-function parseAmountMajor(value: string | undefined): number | null {
+/** Maps a failed status transition onto the action's error string. */
+function statusErrorFor(result: Extract<SetGoalStatusResult, { ok: false }>): string {
+  return result.reason === "not_found" ? GENERIC_NOT_FOUND_ERROR : ILLEGAL_TRANSITION_ERROR;
+}
+
+/** The focus goal must always be an active, non-deleted goal (setFocusGoal and
+ *  getFocusGoal both assert that) — so archiving, achieving or deleting the
+ *  focused goal has to release the pointer instead of leaving a stale one that
+ *  only some views filter out. */
+async function clearFocusIfPointingAt(user: User, goalId: string): Promise<void> {
+  if (user.focusGoalId !== goalId) return;
+  await setUserFocusGoal(user.id, null);
+}
+
+/** Parses a major-unit amount string straight into bigint minor units, or null
+ *  if it isn't a whole non-negative amount that fits the int8 column it lands
+ *  in. The client schema already enforces this shape, but the action is a
+ *  reachable POST endpoint on its own — without the range half, a long digit
+ *  string became an out-of-range BigInt and the INSERT failed with an HTTP 500
+ *  instead of the normal `{ok:false}` validation-error path.
+ *  Conversion itself lives in lib/utils/money.ts (AGENTS.md: only that module
+ *  converts money) and is exact — no Number round-trip. */
+function parseAmountMajor(value: string | undefined): bigint | null {
   if (value === undefined) return null;
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : null;
+  return parseMajorAmountToMinor(value);
 }
 
 /** Converts the client-facing form shape (major-unit amount strings, plain
@@ -52,7 +67,7 @@ function parseAmountMajor(value: string | undefined): number | null {
 function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcordanceAnswers }) {
   if (input.kind === "financial") {
     const target = parseAmountMajor(input.targetAmountMajor);
-    const initial = input.initialAmountMajor ? parseAmountMajor(input.initialAmountMajor) : 0;
+    const initial = input.initialAmountMajor ? parseAmountMajor(input.initialAmountMajor) : 0n;
 
     return {
       kind: "financial" as const,
@@ -60,10 +75,11 @@ function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcorda
       description: input.description || undefined,
       deadline: input.deadline,
       currency: input.currencySymbol,
-      // Leave undefined on bad input rather than throw — goalSchema then
-      // fails validation cleanly (targetAmount is a required positive bigint).
-      targetAmount: target === null ? undefined : toMinorUnits(target),
-      initialAmount: initial === null ? undefined : toMinorUnits(initial),
+      // Leave undefined on bad/out-of-range input rather than throw — goalSchema
+      // then fails validation cleanly (targetAmount is a required positive
+      // bigint bounded by MAX_INT8).
+      targetAmount: target ?? undefined,
+      initialAmount: initial ?? undefined,
       selfConcordance: input.selfConcordance,
       // "" (unset in the HTML select) must map to null, not be dropped — a
       // clearing edit needs SQL NULL to actually reach `.set({...values})`.
@@ -163,15 +179,15 @@ export async function createGoal(
     return { ok: false, error: GENERIC_VALIDATION_ERROR };
   }
 
-  const goal = await insertGoal(user.id, toInsertValues(parsed.data));
+  const { goal, woop } = await insertGoalWithWoop(
+    user.id,
+    toInsertValues(parsed.data),
+    woopParsed.data ?? null,
+  );
 
-  let hasWoop = false;
-  if (woopParsed.data) {
-    const woopEntry = await insertWoopEntry(user.id, goal.id, woopParsed.data);
-    if (woopEntry) {
-      hasWoop = true;
-      track({ name: "woop_completed", goal_id: goal.id });
-    }
+  const hasWoop = woop !== null;
+  if (hasWoop) {
+    track({ name: "woop_completed", goal_id: goal.id });
   }
 
   track({
@@ -260,20 +276,30 @@ export async function archiveGoal(goalId: string): Promise<SimpleActionResult> {
   const existing = await getGoalWithDetails(user.id, goalId);
   if (!existing) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  const updated = await setGoalStatus(user.id, goalId, "archived");
-  if (!updated) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
+  const result = await setGoalStatus(user.id, goalId, "archived");
+  if (!result.ok) return { ok: false, error: statusErrorFor(result) };
 
-  track({
-    name: "goal_archived",
-    goal_id: updated.id,
-    goal_kind: updated.kind,
-    currency: updated.currency ?? undefined,
-    kind: updated.kind,
-    progress_pct: calcProgressPct(existing),
-  });
-  log.info({ goalId }, "goal archived");
+  const updated = result.goal;
+
+  // An archived goal is no longer active, so it must stop being the focus goal
+  // — otherwise the dashboard/today badge keeps pointing at it (getFocusGoal
+  // already filters by status, leaving the two views disagreeing).
+  await clearFocusIfPointingAt(user, goalId);
+
+  if (result.changed) {
+    track({
+      name: "goal_archived",
+      goal_id: updated.id,
+      goal_kind: updated.kind,
+      currency: updated.currency ?? undefined,
+      kind: updated.kind,
+      progress_pct: calcProgressPct(existing),
+    });
+    log.info({ goalId }, "goal archived");
+  }
 
   revalidatePath("/");
+  revalidatePath("/today");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };
@@ -291,9 +317,12 @@ export async function softDeleteGoalAction(goalId: string): Promise<SimpleAction
   if (!existing) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
   await softDeleteGoal(user.id, goalId);
+  // A deleted goal can't be the focus goal either — clear the dangling pointer.
+  await clearFocusIfPointingAt(user, goalId);
   log.info({ goalId }, "goal soft-deleted");
 
   revalidatePath("/");
+  revalidatePath("/today");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };
@@ -310,8 +339,23 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
   const existing = await getGoalWithDetails(user.id, goalId);
   if (!existing) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  const updated = await setGoalStatus(user.id, goalId, "achieved");
-  if (!updated) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
+  const result = await setGoalStatus(user.id, goalId, "achieved");
+  if (!result.ok) return { ok: false, error: statusErrorFor(result) };
+
+  const updated = result.goal;
+
+  // Achieved goals aren't active, so they can't stay the focus goal (same
+  // reasoning as archiveGoal).
+  await clearFocusIfPointingAt(user, goalId);
+
+  if (!result.changed) {
+    // Already achieved — idempotent success, and notably achievedAt was left
+    // exactly where it was rather than being pushed forward.
+    revalidatePath("/");
+    revalidatePath("/today");
+    revalidatePath(`/goals/${goalId}`);
+    return { ok: true };
+  }
 
   const achievedAt = updated.achievedAt ?? new Date();
   const daysToAchieve = Math.max(
@@ -335,6 +379,7 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
   log.info({ goalId, daysToAchieve }, "goal achieved");
 
   revalidatePath("/");
+  revalidatePath("/today");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };

@@ -85,7 +85,9 @@ export async function createSignedUpload(input: {
 /**
  * Registers an already-uploaded object as a mediaItems row. Ownership is
  * enforced by insertMediaItem itself (userId-scoped); a goalId the caller
- * doesn't own simply fails to attach (returns null → typed error here).
+ * doesn't own simply fails to attach ("forbidden" → typed error here).
+ * Registering the same storage path twice is idempotent rather than an error —
+ * see InsertMediaResult in lib/db/queries/media.ts.
  *
  * `commentId` (T8): when a comment attaches a photo, the row is linked to
  * BOTH the comment and the goal (goalId also passed) so it appears in the
@@ -112,7 +114,19 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
     return { ok: false, error: "Некорректный путь файла" };
   }
 
-  const media = await insertMediaItem(user.id, {
+  // The quota is re-checked here, not only in createSignedUpload: registerMedia
+  // is its own public POST endpoint, so a caller can skip the signing step (or
+  // race several uploads past a single count) and the 50-image cap would be
+  // advisory only (CR-009).
+  if (parsed.data.goalId) {
+    const existingCount = await countMediaForGoal(user.id, parsed.data.goalId);
+    if (existingCount >= MAX_MEDIA_PER_GOAL) {
+      log.warn({ goalId: parsed.data.goalId, existingCount }, "registerMedia: quota exceeded");
+      return { ok: false, error: "Не более 50 изображений на цель" };
+    }
+  }
+
+  const inserted = await insertMediaItem(user.id, {
     goalId: parsed.data.goalId ?? null,
     commentId: parsed.data.commentId ?? null,
     storagePath: parsed.data.path,
@@ -121,21 +135,36 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
     caption: parsed.data.caption ?? null,
   });
 
-  if (!media) {
+  if (inserted.status === "forbidden") {
     return { ok: false, error: "Не удалось прикрепить изображение" };
   }
+  if (inserted.status === "conflict") {
+    log.warn({ goalId: parsed.data.goalId }, "registerMedia: storage path already registered");
+    return { ok: false, error: "Это изображение уже было загружено" };
+  }
+
+  const media = inserted.item;
 
   if (parsed.data.setAsCover && parsed.data.goalId) {
     await setGoalCoverForUser(user.id, parsed.data.goalId, media.id);
   }
 
-  track({
-    name: "media_uploaded",
-    goal_id: parsed.data.goalId,
-    context: parsed.data.commentId ? "comment" : parsed.data.setAsCover ? "cover" : "gallery",
-  });
+  // A duplicate registration is a no-op replay of an upload that already
+  // counted — reporting it again would double-count media_uploaded.
+  if (inserted.status === "inserted") {
+    track({
+      name: "media_uploaded",
+      goal_id: parsed.data.goalId,
+      context: parsed.data.commentId ? "comment" : parsed.data.setAsCover ? "cover" : "gallery",
+    });
+  }
   log.info(
-    { mediaId: media.id, goalId: parsed.data.goalId, commentId: parsed.data.commentId },
+    {
+      mediaId: media.id,
+      goalId: parsed.data.goalId,
+      commentId: parsed.data.commentId,
+      duplicate: inserted.status === "duplicate",
+    },
     "media registered",
   );
 

@@ -28,13 +28,25 @@ export async function updateProfile(
     name: formData.get("name"),
     defaultCurrency: formData.get("defaultCurrency"),
     theme: formData.get("theme"),
-    reflectionDay: formData.get("reflectionDay"),
+    // CR-024: the reflection-day control was removed from settings-form.tsx, so
+    // the form no longer posts this field. profileSchema still requires it, and
+    // a missing field would NOT fail validation — z.coerce.number() turns null
+    // into 0, silently rewriting every profile save to "Sunday". Feed the
+    // stored value back instead; it is dropped before the write below.
+    reflectionDay: user.reflectionDay ?? 1,
   });
   if (!parsed.success) {
     return { status: "error", message: GENERIC_ERROR };
   }
 
-  const updated = await updateUserProfile(user.id, parsed.data);
+  // reflection_day is intentionally omitted from the write: nothing reads it,
+  // and leaving it untouched keeps the stored value intact should the setting
+  // ever be wired up for real.
+  const updated = await updateUserProfile(user.id, {
+    name: parsed.data.name,
+    defaultCurrency: parsed.data.defaultCurrency,
+    theme: parsed.data.theme,
+  });
   if (!updated) return { status: "error", message: GENERIC_ERROR };
 
   const cookieStore = await cookies();

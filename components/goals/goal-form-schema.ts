@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GOAL_SPHERES } from "@/lib/spheres";
+import { parseMajorAmountToMinor } from "@/lib/utils/money";
 
 // Form-facing mirror of lib/validators/goal.ts's `goalSchema`, but in the
 // shapes an HTML form actually produces (plain strings, incl. amounts in
@@ -20,6 +21,16 @@ import { GOAL_SPHERES } from "@/lib/spheres";
 // coverImageId directly), never routed through createGoal/updateGoal.
 
 const POSITIVE_INT_RE = /^\d+$/;
+
+const AMOUNT_RANGE_MESSAGE = "Слишком большая сумма";
+
+/** Mirrors the server-side bound: the amount must survive the major→minor
+ *  conversion and still fit the int8 column it lands in. Rejecting it here
+ *  turns "the form submits and the action returns a generic error" into a
+ *  field-level message. lib/actions/goals.ts re-checks — this half is UX only. */
+function isAmountInRange(digits: string): boolean {
+  return parseMajorAmountToMinor(digits) !== null;
+}
 
 export const clientGoalSchema = z
   .object({
@@ -57,11 +68,15 @@ export const clientGoalSchema = z
         path: ["targetAmountMajor"],
         message: "Целое число больше нуля",
       });
+    } else if (!isAmountInRange(target)) {
+      ctx.addIssue({ code: "custom", path: ["targetAmountMajor"], message: AMOUNT_RANGE_MESSAGE });
     }
 
     const initial = data.initialAmountMajor?.trim() ?? "";
     if (initial !== "" && !POSITIVE_INT_RE.test(initial)) {
       ctx.addIssue({ code: "custom", path: ["initialAmountMajor"], message: "Целое число" });
+    } else if (initial !== "" && !isAmountInRange(initial)) {
+      ctx.addIssue({ code: "custom", path: ["initialAmountMajor"], message: AMOUNT_RANGE_MESSAGE });
     }
   });
 

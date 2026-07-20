@@ -83,11 +83,23 @@ export async function updateChecklistItem(
   return row ?? null;
 }
 
-export async function softDeleteChecklistItem(userId: string, itemId: string): Promise<void> {
-  await db
+/**
+ * Returns the soft-deleted row, or null when nothing matched — i.e. the item
+ * does not exist, is already deleted, or belongs to another user. Callers must
+ * branch on the result rather than assuming success (CR-026); the three cases
+ * are deliberately indistinguishable so a miss cannot be used to probe for the
+ * existence of another user's item.
+ */
+export async function softDeleteChecklistItem(
+  userId: string,
+  itemId: string,
+): Promise<ChecklistItem | null> {
+  const [row] = await db
     .update(checklistItems)
     .set({ deletedAt: new Date() })
     .where(
       and(eq(checklistItems.id, itemId), isNull(checklistItems.deletedAt), ownedByUser(userId)),
-    );
+    )
+    .returning();
+  return row ?? null;
 }

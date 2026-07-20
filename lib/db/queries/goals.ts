@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, sql, sum, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql, sum, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   checklistItems,
@@ -7,11 +7,14 @@ import {
   goalKindEnum,
   goalStatusEnum,
   mediaItems,
+  woopEntries,
   type Goal,
   type NewGoal,
+  type NewWoopEntry,
+  type WoopEntry,
 } from "@/lib/db/schema";
 import { calcFinancialProgress } from "@/lib/utils/money";
-import type { Currency } from "@/lib/validators/goal";
+import { goalStatusSourcesFor, type Currency } from "@/lib/validators/goal";
 
 type GoalKind = (typeof goalKindEnum.enumValues)[number];
 type GoalStatus = (typeof goalStatusEnum.enumValues)[number];
@@ -168,6 +171,35 @@ export async function insertGoal(
   return row;
 }
 
+/**
+ * Creates a goal and its optional WOOP entry atomically. Doing these as two
+ * separate statements let a WOOP failure leave a goal with no WOOP row while
+ * the action still reported success (CR-019). The WOOP insert needs no
+ * ownership pre-check here: the goal is created inside this same transaction
+ * and is therefore owned by `userId` by construction.
+ */
+export async function insertGoalWithWoop(
+  userId: string,
+  values: Omit<NewGoal, "userId">,
+  woopValues: Pick<NewWoopEntry, "wish" | "outcome" | "obstacle" | "plan"> | null,
+): Promise<{ goal: Goal; woop: WoopEntry | null }> {
+  return db.transaction(async (tx) => {
+    const [goal] = await tx
+      .insert(goals)
+      .values({ ...values, userId })
+      .returning();
+
+    if (!woopValues) return { goal, woop: null };
+
+    const [woop] = await tx
+      .insert(woopEntries)
+      .values({ ...woopValues, goalId: goal.id })
+      .returning();
+
+    return { goal, woop: woop ?? null };
+  });
+}
+
 export async function updateGoal(
   userId: string,
   goalId: string,
@@ -188,21 +220,54 @@ export async function softDeleteGoal(userId: string, goalId: string): Promise<vo
     .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)));
 }
 
+export type SetGoalStatusResult =
+  | { ok: true; goal: Goal; changed: boolean }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "illegal_transition"; from: GoalStatus };
+
+/**
+ * Moves a goal to `status`, but only along a transition the matrix in
+ * lib/validators/goal.ts permits (`goalStatusSourcesFor`).
+ *
+ * Two things this must never do, both of which the previous unconditional
+ * UPDATE did:
+ *   1. Apply an illegal transition. The expected-status guard lives in the
+ *      WHERE clause, so the check and the write are one atomic statement — no
+ *      read-then-write window.
+ *   2. Clobber `achievedAt`. It is written *only* on a transition into
+ *      "achieved"; every other transition omits the key entirely (drizzle drops
+ *      undefined-valued keys), so archiving an achieved goal preserves the date
+ *      it was achieved instead of nulling it out.
+ *
+ * A no-op (goal already in `status`) is reported as ok/changed:false and writes
+ * nothing — re-marking an achieved goal must not move its achievedAt either.
+ */
 export async function setGoalStatus(
   userId: string,
   goalId: string,
   status: GoalStatus,
-): Promise<Goal | null> {
+): Promise<SetGoalStatusResult> {
+  const scope = and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt));
+
   const [row] = await db
     .update(goals)
     .set({
       status,
-      achievedAt: status === "achieved" ? new Date() : null,
+      ...(status === "achieved" ? { achievedAt: new Date() } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
+    .where(and(scope, inArray(goals.status, goalStatusSourcesFor(status))))
     .returning();
-  return row ?? null;
+
+  if (row) return { ok: true, goal: row, changed: true };
+
+  // Zero rows matched: the goal is missing/deleted, it is already in the target
+  // status, or the transition is illegal. Re-read to tell those apart so the
+  // caller can return a precise error rather than a blanket "not found".
+  const [existing] = await db.select().from(goals).where(scope).limit(1);
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.status === status) return { ok: true, goal: existing, changed: false };
+  return { ok: false, reason: "illegal_transition", from: existing.status };
 }
 
 export async function getDashboardAggregates(userId: string): Promise<DashboardAggregates> {

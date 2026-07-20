@@ -69,7 +69,7 @@ export async function POST(
     goalId,
     title: parsed.data.title,
     note: parsed.data.note ?? null,
-    dueDate: parsed.data.dueDate ? parsed.data.dueDate.toISOString().slice(0, 10) : null,
+    dueDate: parsed.data.dueDate ?? null,
     kind: parsed.data.kind,
     ifThen: parsed.data.ifThen ?? null,
   });

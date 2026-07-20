@@ -127,6 +127,15 @@ export function GoalForm(props: GoalFormProps) {
           });
           return;
         }
+        // The image was stored but the cover UPDATE matched no row (GA-020) —
+        // say so instead of navigating to a goal that silently has no cover.
+        if (registered.cover === "failed") {
+          setCoverWarning({
+            message: "Изображение загружено, но не стало обложкой. Выберите его обложкой в галерее цели.",
+            goalId: result.goalId,
+          });
+          return;
+        }
       }
 
       // Both create and edit land on the goal page (PRD §3.2) — the action

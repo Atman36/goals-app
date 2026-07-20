@@ -26,8 +26,20 @@ export type SignedUploadResult =
   | { ok: true; path: string; token: string }
   | { ok: false; error: string };
 
+/**
+ * What happened to the `setAsCover` request, reported separately from whether
+ * the media row itself was created (GA-020 / COVER-001).
+ *
+ * The two outcomes are genuinely independent: the row can be inserted and the
+ * cover UPDATE still match nothing (the goal was soft-deleted, or the media
+ * row was deleted, between the insert and the setter). Folding that into a
+ * plain `ok: true` made the action claim a cover it had not installed, and the
+ * upload is real, so `ok: false` would be a lie in the other direction.
+ */
+export type CoverOutcome = "not_requested" | "applied" | "failed";
+
 export type RegisterMediaResult =
-  | { ok: true; mediaId: string }
+  | { ok: true; mediaId: string; cover: CoverOutcome }
   | { ok: false; error: string };
 
 /**
@@ -145,8 +157,16 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
 
   const media = inserted.item;
 
+  let cover: CoverOutcome = "not_requested";
   if (parsed.data.setAsCover && parsed.data.goalId) {
-    await setGoalCoverForUser(user.id, parsed.data.goalId, media.id);
+    const applied = await setGoalCoverForUser(user.id, parsed.data.goalId, media.id);
+    cover = applied ? "applied" : "failed";
+    if (!applied) {
+      log.warn(
+        { mediaId: media.id, goalId: parsed.data.goalId },
+        "registerMedia: media stored but cover not applied",
+      );
+    }
   }
 
   // A duplicate registration is a no-op replay of an upload that already
@@ -174,7 +194,7 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
   revalidatePath("/gallery");
   revalidatePath("/");
 
-  return { ok: true, mediaId: media.id };
+  return { ok: true, mediaId: media.id, cover };
 }
 
 export type SetCoverResult = { ok: true } | { ok: false; error: string };

@@ -17,7 +17,12 @@ import { Label } from "@/components/ui/label";
 import { ProgressRing } from "@/components/goals/progress-ring";
 import { Confetti } from "@/components/confetti";
 import { markAchieved } from "@/lib/actions/goals";
-import { calcFinancialProgress, formatMoney, toMinorUnits } from "@/lib/utils/money";
+import {
+  MINOR_UNITS_PER_MAJOR,
+  calcFinancialProgress,
+  formatMoney,
+  parseMajorDecimalToMinor,
+} from "@/lib/utils/money";
 import { calcRequiredMonthlyPace, calcTrailingMonthlyPace, comparePace } from "@/lib/utils/pace";
 import { cn } from "@/lib/utils";
 import type { Currency } from "@/lib/validators/goal";
@@ -120,7 +125,7 @@ export function FinancialProgressHeader({
   const requiredPace = calcRequiredMonthlyPace(targetAmount, saved, new Date(deadline));
   const paceStatus =
     requiredPace !== null && requiredPace > 0n
-      ? comparePace(Number(requiredPace), Number(calcTrailingMonthlyPace(contributions)))
+      ? comparePace(requiredPace, calcTrailingMonthlyPace(contributions))
       : null;
 
   return (
@@ -214,8 +219,13 @@ export function QuickAddSheet({
   const idRef = useRef<string | null>(null);
 
   const presets = PRESETS_MAJOR[currency];
-  const amountMajor = selectedPreset ?? Number(customAmount || 0);
-  const amountMinor = Number.isFinite(amountMajor) && amountMajor > 0 ? toMinorUnits(amountMajor) : 0n;
+  // Exact, no Number hop (GA-014 / MONEY-001): a preset is a whole major-unit
+  // amount scaled in bigint, and a typed amount is parsed from its own digits.
+  // An unparseable or empty field is 0n, which handleSubmit rejects.
+  const amountMinor =
+    selectedPreset !== null
+      ? BigInt(selectedPreset) * MINOR_UNITS_PER_MAJOR
+      : (parseMajorDecimalToMinor(customAmount) ?? 0n);
   const signedAmountMinor = isNegative ? -amountMinor : amountMinor;
 
   const mutation = useMutation({

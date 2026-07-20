@@ -104,18 +104,14 @@ function toDomainInput(input: ClientGoalInput & { selfConcordance?: SelfConcorda
   };
 }
 
-/** Date-only round trip: goalSchema's z.coerce.date() parses a "yyyy-MM-dd"
- *  string as UTC midnight, so slicing the ISO string back gives the same
- *  calendar date regardless of the server's local timezone. */
-function toDbDeadline(deadline: Date): string {
-  return deadline.toISOString().slice(0, 10);
-}
-
 function toInsertValues(data: GoalInput): Omit<NewGoal, "userId"> {
   const common = {
     title: data.title,
     description: data.description ?? null,
-    deadline: toDbDeadline(data.deadline),
+    // Already the canonical "yyyy-MM-dd" key the date column stores —
+    // goalSchema validates it as a real calendar date without a Date hop
+    // (lib/validators/date-key.ts), so there is nothing left to convert.
+    deadline: data.deadline,
     // Explicit `undefined` (not `?? null`) so an edit-mode update — which
     // never carries selfConcordance (see toDomainInput's caller in
     // updateGoal) — leaves the column untouched rather than nulling out a
@@ -316,7 +312,13 @@ export async function softDeleteGoalAction(goalId: string): Promise<SimpleAction
   const existing = await getGoalWithDetails(user.id, goalId);
   if (!existing) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  await softDeleteGoal(user.id, goalId);
+  // Zero rows means the goal was already deleted (or stopped being ours)
+  // between the read above and this write — a concurrent tab got there first.
+  // Report it exactly like a goal that was never there, instead of logging a
+  // delete that did not happen (GA-024).
+  const deletedId = await softDeleteGoal(user.id, goalId);
+  if (!deletedId) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
+
   // A deleted goal can't be the focus goal either — clear the dangling pointer.
   await clearFocusIfPointingAt(user, goalId);
   log.info({ goalId }, "goal soft-deleted");

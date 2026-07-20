@@ -58,7 +58,8 @@ describe("isInt8IntegerString", () => {
 describe("contributionPostBodySchema.amountMinor (CR-013)", () => {
   const base = {
     id: "3f1d1d24-1f4c-4a0d-9f8e-9a6b3c2d1e0f",
-    occurredAt: "2026-07-20T00:00:00.000Z",
+    // Date-only key, not a datetime: GA-018 made the datetime form invalid.
+    occurredAt: "2026-07-20",
   };
 
   it("accepts the int8 maximum", () => {
@@ -101,7 +102,7 @@ describe("contributionSchema.amount range", () => {
   const base = {
     id: "3f1d1d24-1f4c-4a0d-9f8e-9a6b3c2d1e0f",
     goalId: "8c2a5b31-77d4-4f2a-9c1e-2b6d4e8f0a13",
-    occurredAt: new Date("2026-07-20T00:00:00.000Z"),
+    occurredAt: "2026-07-20",
   };
 
   it("accepts an in-range amount", () => {

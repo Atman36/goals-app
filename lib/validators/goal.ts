@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { GOAL_SPHERES } from "@/lib/spheres";
 import { MAX_INT8 } from "@/lib/utils/money";
+import { dateKeySchema } from "@/lib/validators/date-key";
 
 export const currencySchema = z.enum(["RUB", "USD"]);
 export type Currency = z.infer<typeof currencySchema>;
@@ -55,7 +56,9 @@ export const selfConcordanceSchema = z.object({
 const goalBaseSchema = z.object({
   title: z.string().trim().min(3).max(60),
   description: z.string().max(4000).optional(),
-  deadline: z.coerce.date(),
+  // A calendar date, kept as the "YYYY-MM-DD" string the `deadline` date
+  // column stores — never coerced through Date (GA-018), see date-key.ts.
+  deadline: dateKeySchema,
   coverImageId: z.uuid().optional(),
   selfConcordance: selfConcordanceSchema.optional(),
   sphere: z.enum(GOAL_SPHERES).nullable().optional(),

@@ -14,9 +14,20 @@ function weeksUntil(deadline: Date, from: Date): number {
   return Math.max(days, 0) / DAYS_PER_WEEK;
 }
 
+/** Ticks per month used to carry the (necessarily fractional) month count into
+ *  bigint arithmetic. A micro-month is ~2.6 seconds, far finer than the day
+ *  resolution the deadlines themselves have, so nothing observable changes. */
+const MONTH_TICKS = 1_000_000;
+
 /**
  * required_pace = (target_amount − saved) / months_to_deadline — PRD §3.3.4.
  * Returns minor units/month. Null once the deadline has passed (avoid divide-by-near-zero).
+ *
+ * The division is bigint-exact: `Number(remaining)` used to round the
+ * remaining amount to a double *before* dividing, so a large int8 goal was
+ * projected from an amount that was not the stored one (GA-014 / MONEY-001).
+ * The month count is scaled to an integer instead, and the amount never leaves
+ * bigint.
  */
 export function calcRequiredMonthlyPace(
   targetAmount: bigint,
@@ -28,7 +39,13 @@ export function calcRequiredMonthlyPace(
   if (months <= 0) return null;
   const remaining = targetAmount - saved;
   if (remaining <= 0n) return 0n;
-  return BigInt(Math.ceil(Number(remaining) / months));
+
+  const ticks = BigInt(Math.round(months * MONTH_TICKS));
+  if (ticks <= 0n) return null;
+
+  // Ceiling division in bigint: (a + b - 1) / b, exact for positive operands.
+  const numerator = remaining * BigInt(MONTH_TICKS);
+  return (numerator + ticks - 1n) / ticks;
 }
 
 /** For non-financial goals: remaining checklist items per week until the deadline — PRD §3.3.4. */
@@ -43,10 +60,23 @@ export function calcRequiredWeeklyItemPace(
   return Math.ceil((remainingItems / weeks) * 10) / 10;
 }
 
-/** Compares required pace against the actual average pace over the trailing window. */
-export function comparePace(requiredPace: number, actualPace: number, tolerance = 0.1): PaceStatus {
-  if (actualPace >= requiredPace * (1 + tolerance)) return "ahead";
-  if (actualPace < requiredPace * (1 - tolerance)) return "behind";
+/**
+ * Compares required pace against the actual average pace over the trailing
+ * window. Both are bigint minor units/month — the call site used to funnel
+ * them through Number() first, which is exactly the coercion GA-014 flagged.
+ *
+ * The tolerance band is applied by cross-multiplication rather than by
+ * multiplying by 1.1/0.9, so the comparison is exact at any magnitude:
+ *   actual ≥ required · (1 + t)  ⇔  actual · 100 ≥ required · (100 + tPercent)
+ */
+export function comparePace(
+  requiredPace: bigint,
+  actualPace: bigint,
+  tolerancePercent = 10,
+): PaceStatus {
+  const scaledActual = actualPace * 100n;
+  if (scaledActual >= requiredPace * BigInt(100 + tolerancePercent)) return "ahead";
+  if (scaledActual < requiredPace * BigInt(100 - tolerancePercent)) return "behind";
   return "on_track";
 }
 

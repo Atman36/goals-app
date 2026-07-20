@@ -213,11 +213,24 @@ export async function updateGoal(
   return row ?? null;
 }
 
-export async function softDeleteGoal(userId: string, goalId: string): Promise<void> {
-  await db
+/**
+ * Soft-deletes one owned, still-live goal and reports which row it actually
+ * changed — `null` when the UPDATE matched nothing (GA-024 / SOFT-DELETE-001).
+ *
+ * The predicate already excluded a foreign or already-deleted goal, but the
+ * void return meant a zero-row write was indistinguishable from a real one, so
+ * the action logged and reported success for a delete that did nothing (two
+ * tabs deleting the same goal: the second one races and matches no row).
+ * Returning the id makes "did this write happen" answerable by the caller
+ * rather than assumed — the same shape the checklist/comment deletes use.
+ */
+export async function softDeleteGoal(userId: string, goalId: string): Promise<string | null> {
+  const [row] = await db
     .update(goals)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)));
+    .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
+    .returning({ id: goals.id });
+  return row?.id ?? null;
 }
 
 export type SetGoalStatusResult =
@@ -326,6 +339,25 @@ export async function getDashboardAggregates(userId: string): Promise<DashboardA
     doneItems: checklistTotals?.doneItems ?? 0,
     totalItems: checklistTotals?.totalItems ?? 0,
   };
+}
+
+/**
+ * The one readability predicate for a goal: does `goalId` name a live goal the
+ * caller may read? Deliberately answers a single boolean and nothing else —
+ * a foreign goal, a deleted goal and a goal that never existed are
+ * indistinguishable from the outside, so a caller cannot turn it into an
+ * existence oracle (GA-026 / DATA-OWNERSHIP-001).
+ *
+ * Cheaper than getGoalWithDetails (no aggregates, no joins) for callers that
+ * only need the capability answer — e.g. goal-scoped analytics.
+ */
+export async function canReadGoal(userId: string, goalId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: goals.id })
+    .from(goals)
+    .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
+    .limit(1);
+  return row !== undefined;
 }
 
 export async function hasContributions(userId: string, goalId: string): Promise<boolean> {

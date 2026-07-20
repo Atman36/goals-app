@@ -42,18 +42,30 @@ const textareaClassName = cn(
  *  goal. One check-in per (goal, UTC day) — re-saving updates it. Wiring
  *  mirrors focus-toggle.tsx: local state seeded from `initial`, useTransition
  *  + direct server-action call, router.refresh() on success. */
-export function CheckinCard({ goalId, initial }: { goalId: string; initial: CheckinCardInitial | null }) {
+export function CheckinCard({
+  goalId,
+  expectedDate,
+  initial,
+}: {
+  goalId: string;
+  /** The UTC day this card was rendered for, posted back verbatim so the
+   *  action can refuse a submit that crossed midnight (GA-013). */
+  expectedDate: string;
+  initial: CheckinCardInitial | null;
+}) {
   const router = useRouter();
   const [outcome, setOutcome] = useState<CheckinOutcome | null>(initial?.outcome ?? null);
   const [feeling, setFeeling] = useState<number | null>(initial?.feeling ?? null);
   const [note, setNote] = useState(initial?.note ?? "");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [isStale, setIsStale] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function clearFeedback() {
     setSaved(false);
     setError(undefined);
+    setIsStale(false);
   }
 
   function handleOutcome(value: CheckinOutcome) {
@@ -75,17 +87,20 @@ export function CheckinCard({ goalId, initial }: { goalId: string; initial: Chec
     if (outcome === null || feeling === null) return;
     clearFeedback();
     startTransition(async () => {
-      const result = await saveCheckin({ goalId, outcome, feeling, note });
+      const result = await saveCheckin({ goalId, expectedDate, outcome, feeling, note });
       if (result.ok) {
         setSaved(true);
         router.refresh();
       } else {
         setError(result.error);
+        // Nothing was written: the day rolled over while this card was open.
+        // Block further submits until a reload re-renders it for the new day.
+        if (result.stale) setIsStale(true);
       }
     });
   }
 
-  const canSubmit = outcome !== null && feeling !== null && !isPending;
+  const canSubmit = outcome !== null && feeling !== null && !isPending && !isStale;
 
   return (
     <Card>
@@ -147,6 +162,11 @@ export function CheckinCard({ goalId, initial }: { goalId: string; initial: Chec
         </div>
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {isStale ? (
+          <Button type="button" variant="outline" onClick={() => router.refresh()}>
+            Обновить страницу
+          </Button>
+        ) : null}
         {saved ? (
           <p role="status" className="text-sm text-positive">
             Сохранено ✓

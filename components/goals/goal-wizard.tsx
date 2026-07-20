@@ -159,6 +159,16 @@ export function GoalWizard({
           setCreateError(`Цель сохранена, но обложка не прикрепилась: ${media.error}`);
           return;
         }
+
+        // Same contract for the half-success the action now reports: the row
+        // exists, the cover does not (GA-020).
+        if (media.cover === "failed") {
+          setCreatedGoalId(result.goalId);
+          setCreateError(
+            "Изображение загружено, но не стало обложкой. Выберите его обложкой в галерее цели.",
+          );
+          return;
+        }
       }
 
       await seedStarterChecklist(result.goalId);

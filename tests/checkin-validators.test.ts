@@ -6,6 +6,7 @@ const VALID_GOAL_ID = "3c1f6f7e-6b1a-4c1a-9b1a-1e1a1a1a1a1a";
 function validInput(overrides: Record<string, unknown> = {}) {
   return {
     goalId: VALID_GOAL_ID,
+    expectedDate: "2026-07-20",
     outcome: "done",
     feeling: 3,
     note: "Норм день",

@@ -127,6 +127,7 @@ export default async function TodayPage() {
                 </div>
                 <CheckinCard
                   goalId={focusGoal.id}
+                  expectedDate={today}
                   initial={
                     checkin
                       ? { outcome: checkin.outcome, feeling: checkin.feeling, note: checkin.note }

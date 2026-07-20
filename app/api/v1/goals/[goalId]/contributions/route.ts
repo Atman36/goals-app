@@ -10,13 +10,8 @@ import { contributionSchema, contributionPostBodySchema } from "@/lib/validators
 import { goalIdSchema } from "@/lib/validators/goal";
 import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
+import { amountMagnitudeBucket } from "@/lib/utils/money";
 import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
-
-function amountBucket(amountMajorAbs: number): "<1k" | "1k-10k" | ">10k" {
-  if (amountMajorAbs < 1000) return "<1k";
-  if (amountMajorAbs <= 10000) return "1k-10k";
-  return ">10k";
-}
 
 /**
  * Stable machine-readable code for "this idempotency key is already bound to a
@@ -101,7 +96,7 @@ export async function POST(
     goalId: parsed.data.goalId,
     amount: parsed.data.amount,
     note: parsed.data.note ?? null,
-    occurredAt: parsed.data.occurredAt.toISOString().slice(0, 10),
+    occurredAt: parsed.data.occurredAt,
   };
 
   const result = await insertContributionIdempotent(user.id, attempted);
@@ -135,13 +130,15 @@ export async function POST(
 
   const created = result.contribution;
 
-  const amountMajorAbs = Math.abs(Number(magnitude)) / 100;
   track({
     name: "contribution_added",
     goal_id: goalId,
     goal_kind: goal.kind,
     currency: goal.currency,
-    amount_bucket: amountBucket(amountMajorAbs),
+    // Bucketed in bigint (lib/utils/money.ts) — the previous
+    // Math.abs(Number(magnitude))/100 rounded a large int8 amount before
+    // classifying it, and briefly materialized the exact value (GA-014).
+    amount_bucket: amountMagnitudeBucket(magnitude),
     is_preset: bodyParsed.data.isPreset,
     is_negative: bodyParsed.data.isNegative,
   });

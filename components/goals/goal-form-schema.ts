@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { GOAL_SPHERES } from "@/lib/spheres";
 import { parseMajorAmountToMinor } from "@/lib/utils/money";
+import { isCalendarDateKey } from "@/lib/validators/date-key";
 
 // Form-facing mirror of lib/validators/goal.ts's `goalSchema`, but in the
 // shapes an HTML form actually produces (plain strings, incl. amounts in
@@ -37,10 +38,10 @@ export const clientGoalSchema = z
     kind: z.enum(["financial", "non_financial"]),
     title: z.string().trim().min(3, "От 3 до 60 символов").max(60, "От 3 до 60 символов"),
     description: z.string().max(4000).optional().or(z.literal("")),
-    deadline: z
-      .string()
-      .min(1, "Укажите срок")
-      .refine((v) => !Number.isNaN(new Date(v).getTime()), "Некорректная дата"),
+    // Same strict calendar-date rule the server applies (goalSchema →
+    // lib/validators/date-key.ts). The old `new Date(v)` check accepted
+    // "2026-02-31" because the Date constructor normalizes it to March 3.
+    deadline: z.string().min(1, "Укажите срок").refine(isCalendarDateKey, "Некорректная дата"),
     // `.or(z.literal(""))`: the hidden input backing this field (goal-form.tsx)
     // renders "" for a non-financial goal (HTML has no concept of an
     // `undefined` field value) — without this, the base shape rejects that ""

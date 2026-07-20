@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isInt8NonNegativeIntegerString, isWithinInt8 } from "@/lib/utils/money";
+import { dateKeySchema } from "@/lib/validators/date-key";
 
 // id is client-generated for idempotency — PRD §3.3.1/§7.
 export const contributionSchema = z.object({
@@ -13,7 +14,9 @@ export const contributionSchema = z.object({
     // failing validation, so the bound is enforced before the DB sees it.
     .refine(isWithinInt8, "Amount is out of range"),
   note: z.string().max(280).optional(),
-  occurredAt: z.coerce.date(),
+  // Calendar day, kept as the "YYYY-MM-DD" string the `occurred_at` date
+  // column stores — never coerced through Date (GA-018), see date-key.ts.
+  occurredAt: dateKeySchema,
 });
 
 export type ContributionInput = z.infer<typeof contributionSchema>;
@@ -43,7 +46,7 @@ export const contributionPostBodySchema = z.object({
       "amountMinor must be a non-negative integer string within int8 range",
     ),
   note: z.string().max(280).optional(),
-  occurredAt: z.coerce.date(),
+  occurredAt: dateKeySchema,
   isNegative: z.boolean().optional().default(false),
   // Client-side only knowledge (which preset button, if any, was used) — for
   // the contribution_added {is_preset} analytics prop (PRD §8.4).

@@ -46,15 +46,33 @@ describe("calcRequiredWeeklyItemPace", () => {
 
 describe("comparePace", () => {
   it("reports on_track when actual pace matches required pace", () => {
-    expect(comparePace(100, 100)).toBe("on_track");
+    expect(comparePace(100n, 100n)).toBe("on_track");
   });
 
   it("reports ahead when actual pace exceeds required pace beyond tolerance", () => {
-    expect(comparePace(100, 115)).toBe("ahead");
+    expect(comparePace(100n, 115n)).toBe("ahead");
   });
 
   it("reports behind when actual pace trails required pace beyond tolerance", () => {
-    expect(comparePace(100, 85)).toBe("behind");
+    expect(comparePace(100n, 85n)).toBe("behind");
+  });
+
+  // MONEY-001 (GA-014): the band used to be applied as required * 1.1 on
+  // doubles, so at int8 magnitudes the 10% boundary landed on a rounded value.
+  // Cross-multiplication keeps it exact — one minor unit either side flips it.
+  it("stays exact at the tolerance boundary past Number.MAX_SAFE_INTEGER", () => {
+    const required = 9_007_199_254_740_993n; // 2^53 + 1
+
+    // "ahead" starts at ceil(required · 1.1); one minor unit below it is not.
+    const firstAhead = (required * 110n + 99n) / 100n;
+    expect(comparePace(required, firstAhead)).toBe("ahead");
+    expect(comparePace(required, firstAhead - 1n)).toBe("on_track");
+
+    // "behind" ends just under required · 0.9: the truncated value is still
+    // below the exact threshold, the next one up is not.
+    const lastBehind = (required * 90n) / 100n;
+    expect(comparePace(required, lastBehind)).toBe("behind");
+    expect(comparePace(required, lastBehind + 1n)).toBe("on_track");
   });
 });
 

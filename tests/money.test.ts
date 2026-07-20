@@ -3,18 +3,21 @@ import {
   calcFinancialProgress,
   calcSaved,
   formatMoney,
+  parseMajorDecimalToMinor,
   toMajorUnits,
-  toMinorUnits,
 } from "@/lib/utils/money";
 
-describe("toMinorUnits / toMajorUnits round-trip", () => {
+// GA-014: toMinorUnits(number) is gone — the major→minor direction now starts
+// from the string the user actually typed, so these round-trips assert the
+// exact path rather than the float one.
+describe("parseMajorDecimalToMinor / toMajorUnits round-trip", () => {
   it("round-trips whole rubles", () => {
-    expect(toMinorUnits(100)).toBe(10000n);
+    expect(parseMajorDecimalToMinor("100")).toBe(10000n);
     expect(toMajorUnits(10000n)).toBe(100);
   });
 
   it("round-trips kopecks", () => {
-    expect(toMinorUnits(19.99)).toBe(1999n);
+    expect(parseMajorDecimalToMinor("19.99")).toBe(1999n);
     expect(toMajorUnits(1999n)).toBe(19.99);
   });
 });

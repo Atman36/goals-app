@@ -112,8 +112,11 @@ describe("CR-019: registerMedia results are never discarded", () => {
     const code = source("components/goals/goal-form.tsx");
 
     expect(code).toContain("setCoverWarning(");
-    // Resubmitting after a saved goal would create a second goal.
-    expect(code).toContain("disabled={isPending || !!coverWarning}");
+    // Resubmitting after a saved goal would create a second goal. Asserted on
+    // the guard, not the whole expression: GA-012 added `|| isStale` to the
+    // same disabled= condition, and pinning the exact string made an unrelated
+    // safety addition look like a regression.
+    expect(code).toMatch(/disabled=\{[^}]*!!coverWarning/);
     expect(code).toContain("Перейти к цели");
   });
 });

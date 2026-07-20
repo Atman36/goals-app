@@ -48,6 +48,9 @@ export function GoalForm(props: GoalFormProps) {
   const [coverWarning, setCoverWarning] = useState<
     { message: string; goalId: string } | undefined
   >();
+  /** GA-012: the goal changed under this form. Saving again is blocked until
+   *  the page is reloaded, because the payload in hand is known-outdated. */
+  const [isStale, setIsStale] = useState(false);
 
   const kind = props.mode === "create" ? props.kind : props.goal.kind;
 
@@ -102,10 +105,21 @@ export function GoalForm(props: GoalFormProps) {
     startTransition(async () => {
       const result =
         props.mode === "edit"
-          ? await updateGoal({ ...values, id: props.goal.id })
+          ? await updateGoal({
+              ...values,
+              id: props.goal.id,
+              // GA-012: the version this form was rendered from. The action
+              // compares it against the committed row and refuses rather than
+              // overwriting fields this form never showed.
+              expectedUpdatedAt: new Date(props.goal.updatedAt).toISOString(),
+            })
           : await createGoal(values);
 
       if (!result.ok) {
+        // A stale edit wrote nothing, so offering "save again" would just
+        // re-post the same outdated values — the only honest option is to
+        // reload the form from the current row.
+        if (result.stale) setIsStale(true);
         setFormError(result.error);
         return;
       }
@@ -271,7 +285,24 @@ export function GoalForm(props: GoalFormProps) {
         </div>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isPending || !!coverWarning}>
+      {isStale ? (
+        <div className="flex flex-col gap-2 rounded-2xl bg-muted/50 p-3">
+          <p className="text-sm text-muted-foreground">
+            Перезагрузка покажет текущую версию цели. Внесённые здесь правки не сохранятся —
+            перенесите их вручную после обновления.
+          </p>
+          <Button type="button" variant="outline" onClick={() => router.refresh()}>
+            Обновить страницу
+          </Button>
+        </div>
+      ) : null}
+
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        disabled={isPending || !!coverWarning || isStale}
+      >
         {isPending
           ? "Сохраняем…"
           : props.mode === "edit"

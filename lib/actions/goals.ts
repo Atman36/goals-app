@@ -7,7 +7,6 @@ import {
   softDeleteGoal,
   setGoalStatus,
   getGoalWithDetails,
-  hasContributions,
   type GoalWithProgress,
   type SetGoalStatusResult,
 } from "@/lib/db/queries/goals";
@@ -24,7 +23,9 @@ import type { ClientGoalInput } from "@/components/goals/goal-form-schema";
 
 export type GoalActionResult =
   | { ok: true; goalId: string }
-  | { ok: false; error: string };
+  /** `stale` marks the one failure the edit UI handles differently: nothing was
+   *  written because the goal changed after this form was rendered (GA-012). */
+  | { ok: false; error: string; stale?: boolean };
 
 export type SimpleActionResult = { ok: true } | { ok: false; error: string };
 
@@ -32,6 +33,8 @@ const GENERIC_NOT_FOUND_ERROR = "Цель не найдена";
 const GENERIC_VALIDATION_ERROR = "Проверьте поля формы";
 const GENERIC_INVALID_ID_ERROR = "Некорректные данные";
 const ILLEGAL_TRANSITION_ERROR = "Это действие недоступно для цели в текущем статусе";
+const STALE_GOAL_ERROR =
+  "Цель изменилась, пока форма была открыта — правки не сохранены. Обновите страницу, чтобы не потерять чужие изменения.";
 
 /** Maps a failed status transition onto the action's error string. */
 function statusErrorFor(result: Extract<SetGoalStatusResult, { ok: false }>): string {
@@ -205,7 +208,9 @@ export async function createGoal(
 }
 
 export async function updateGoal(
-  input: ClientGoalInput & { id: string },
+  /** `expectedUpdatedAt` is the goal's `updatedAt` as of the render that
+   *  produced this payload, ISO-encoded — the optimistic token from GA-012. */
+  input: ClientGoalInput & { id: string; expectedUpdatedAt: string },
 ): Promise<GoalActionResult> {
   const log = withRequestId(crypto.randomUUID());
 
@@ -229,31 +234,38 @@ export async function updateGoal(
     return { ok: false, error: GENERIC_VALIDATION_ERROR };
   }
 
-  // Currency-lock invariant (PRD §3.2): a goal's currency may only change
-  // while it has zero non-deleted contributions. Requires a DB read, so it
-  // can't be a static Zod rule — enforced here, not only by disabling the
-  // input client-side.
-  if (parsed.data.kind === "financial" && existing.kind === "financial") {
-    if (parsed.data.currency !== existing.currency) {
-      const locked = await hasContributions(user.id, input.id);
-      if (locked) {
-        return { ok: false, error: "Валюту нельзя изменить: по цели уже есть взносы" };
-      }
-    }
+  const expected = new Date(input.expectedUpdatedAt);
+  if (Number.isNaN(expected.getTime())) {
+    return { ok: false, error: GENERIC_INVALID_ID_ERROR };
   }
 
-  // The query locks and re-reads the row before deciding whether to snapshot a
-  // formulation revision, so simultaneous edits cannot record a stale prior
-  // state. Sphere-only edits still update without creating a revision.
+  // The currency-lock invariant (PRD §3.2) and the stale-edit check both live
+  // inside updateGoalWithRevision now, under the goal row lock — checking
+  // either one here, in its own round trip, is exactly the race GA-016
+  // describes. Sphere-only edits still update without creating a revision.
   const values = toInsertValues(parsed.data);
-  const updated = await updateGoalWithRevision(user.id, input.id, {
-    ...values,
-    title: values.title,
-    description: values.description ?? null,
-    deadline: values.deadline,
-  });
-  if (!updated) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
+  const outcome = await updateGoalWithRevision(
+    user.id,
+    input.id,
+    {
+      ...values,
+      title: values.title,
+      description: values.description ?? null,
+      deadline: values.deadline,
+    },
+    expected,
+  );
 
+  if (outcome.status === "not_found") return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
+  if (outcome.status === "currency_locked") {
+    return { ok: false, error: "Валюту нельзя изменить: по цели уже есть взносы" };
+  }
+  if (outcome.status === "stale") {
+    log.info({ goalId: input.id }, "updateGoal rejected: form was rendered from an older version");
+    return { ok: false, error: STALE_GOAL_ERROR, stale: true };
+  }
+
+  const updated = outcome.goal;
   log.info({ goalId: updated.id }, "goal updated");
   revalidatePath("/");
   revalidatePath(`/goals/${updated.id}`);
@@ -316,11 +328,12 @@ export async function softDeleteGoalAction(goalId: string): Promise<SimpleAction
   // between the read above and this write — a concurrent tab got there first.
   // Report it exactly like a goal that was never there, instead of logging a
   // delete that did not happen (GA-024).
+  // GA-025: the focus pointer and the goal's children are cleared inside this
+  // same transaction now, so there is no window in which the goal is gone but
+  // the user is still focused on it.
   const deletedId = await softDeleteGoal(user.id, goalId);
   if (!deletedId) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  // A deleted goal can't be the focus goal either — clear the dangling pointer.
-  await clearFocusIfPointingAt(user, goalId);
   log.info({ goalId }, "goal soft-deleted");
 
   revalidatePath("/");

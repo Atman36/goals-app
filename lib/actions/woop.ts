@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
-import { getWoopByGoal, insertWoopEntry, touchWoopLived, updateWoopEntry } from "@/lib/db/queries/woop";
+import { saveWoopEntry, touchWoopLived } from "@/lib/db/queries/woop";
 import { goalIdSchema } from "@/lib/validators/goal";
 import { woopInputSchema, type WoopInput } from "@/lib/validators/woop";
 import { track } from "@/lib/analytics/events";
@@ -32,19 +32,17 @@ export async function saveWoop(goalId: string, input: WoopInput): Promise<Simple
     return { ok: false, error: GENERIC_VALIDATION_ERROR };
   }
 
-  const existingGoal = await getGoalWithDetails(user.id, goalId);
-  if (!existingGoal) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
-
-  const existingWoop = await getWoopByGoal(user.id, goalId);
-  const saved = existingWoop
-    ? await updateWoopEntry(user.id, goalId, parsed.data)
-    : await insertWoopEntry(user.id, goalId, parsed.data);
+  // GA-017: create-or-edit is decided inside the query, under the goal row
+  // lock. Asking "does a WOOP exist?" here and branching would let two tabs
+  // both answer "no" and both insert — `goal_id` is not unique yet.
+  const saved = await saveWoopEntry(user.id, goalId, parsed.data);
   if (!saved) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  if (!existingWoop) {
+  const isNew = saved.status === "created";
+  if (isNew) {
     track({ name: "woop_completed", goal_id: goalId });
   }
-  log.info({ goalId, isNew: !existingWoop }, "woop saved");
+  log.info({ goalId, isNew }, "woop saved");
 
   revalidatePath(`/goals/${goalId}`);
 

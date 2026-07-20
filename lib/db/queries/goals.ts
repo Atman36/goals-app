@@ -1,12 +1,15 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql, sum, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  checkins,
   checklistItems,
+  comments,
   contributions,
   goals,
   goalKindEnum,
   goalStatusEnum,
   mediaItems,
+  users,
   woopEntries,
   type Goal,
   type NewGoal,
@@ -224,13 +227,60 @@ export async function updateGoal(
  * Returning the id makes "did this write happen" answerable by the caller
  * rather than assumed — the same shape the checklist/comment deletes use.
  */
+/**
+ * Soft-deletes a goal, everything living under it, and the owner's focus
+ * pointer — in one transaction.
+ *
+ * Two findings meet here:
+ *
+ * - **GA-025.** Releasing the focus pointer used to be a second statement fired
+ *   by the action after this one committed. A crash or a lost connection in
+ *   between left the user focused on a deleted goal, which only some views
+ *   filter out. It is now part of the same commit, and it is expressed as a
+ *   conditional UPDATE rather than a read-then-write, so it needs no `User`
+ *   object and cannot act on a stale one.
+ *
+ * - **The children.** Deleting a goal never touched its children, on the theory
+ *   that every read joins the goal anyway. The 2026-07-20 probe run (section
+ *   A13) found that theory already violated in the live database: 2 checklist
+ *   items, 1 comment, 1 contribution and 1 WOOP row were live under
+ *   soft-deleted goals. They are invisible today and would become visible the
+ *   moment any future policy reads a child table without its parent — which is
+ *   precisely the Stage-1 direction. Cascading the soft delete closes that.
+ *
+ * `woop_entries` and `goal_revisions` carry no `deleted_at` column, so they
+ * cannot be cascaded here; they stay reachable only through their goal. Giving
+ * them one is a schema change and is left to a migration.
+ *
+ * Returns the deleted goal's id, or null when nothing matched — an unknown id,
+ * a foreign goal, or one already deleted. The caller must not report success on
+ * null (GA-024).
+ */
 export async function softDeleteGoal(userId: string, goalId: string): Promise<string | null> {
-  const [row] = await db
-    .update(goals)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
-    .returning({ id: goals.id });
-  return row?.id ?? null;
+  return db.transaction(async (tx) => {
+    const now = new Date();
+
+    const [row] = await tx
+      .update(goals)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
+      .returning({ id: goals.id });
+    if (!row) return null;
+
+    for (const child of [contributions, checklistItems, comments, mediaItems, checkins]) {
+      await tx
+        .update(child)
+        .set({ deletedAt: now })
+        .where(and(eq(child.goalId, goalId), isNull(child.deletedAt)));
+    }
+
+    await tx
+      .update(users)
+      .set({ focusGoalId: null })
+      .where(and(eq(users.id, userId), eq(users.focusGoalId, goalId)));
+
+    return row.id;
+  });
 }
 
 export type SetGoalStatusResult =

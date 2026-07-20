@@ -1,5 +1,6 @@
 import { and, asc, eq, getTableColumns, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
 import { checkins, goals, type Checkin, type NewCheckin } from "@/lib/db/schema";
 
 /** All non-deleted check-ins for a goal the user owns, oldest first — feeds the
@@ -65,20 +66,30 @@ export async function getCheckinForGoalOnDate(
  *  so an `undefined` note (the validator's "empty note" value) would leave a
  *  previously-saved note untouched instead of clearing it. `null` is a real
  *  value and is written as intended. */
-export async function upsertCheckinRow(values: NewCheckin): Promise<Checkin | null> {
-  const [row] = await db
-    .insert(checkins)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [checkins.goalId, checkins.date],
-      set: {
-        outcome: values.outcome,
-        feeling: values.feeling,
-        note: values.note ?? null,
-        updatedAt: new Date(),
-        deletedAt: null,
-      },
-    })
-    .returning();
+export async function upsertCheckinRow(
+  userId: string,
+  values: NewCheckin,
+): Promise<Checkin | null> {
+  // GA-015: takes `userId` and locks the goal row rather than trusting a check
+  // the action performed in an earlier round trip. The upsert itself is
+  // unchanged; what changed is that the goal cannot be soft-deleted between the
+  // liveness check and this write. See lib/db/queries/parent-lock.ts.
+  const row = await withLockedLiveGoal(userId, values.goalId, async (tx) => {
+    const [upserted] = await tx
+      .insert(checkins)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [checkins.goalId, checkins.date],
+        set: {
+          outcome: values.outcome,
+          feeling: values.feeling,
+          note: values.note ?? null,
+          updatedAt: new Date(),
+          deletedAt: null,
+        },
+      })
+      .returning();
+    return upserted ?? null;
+  });
   return row ?? null;
 }

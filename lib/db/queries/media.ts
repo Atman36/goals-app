@@ -13,6 +13,11 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import { comments, goals, mediaItems, type MediaItem } from "@/lib/db/schema";
+import {
+  withLockedLiveComment,
+  withLockedLiveGoal,
+  type Transaction,
+} from "@/lib/db/queries/parent-lock";
 
 type NewMediaItem = typeof mediaItems.$inferInsert;
 
@@ -93,35 +98,27 @@ export async function listAllMedia(
   }));
 }
 
-async function canAttachMedia(
+/**
+ * GA-015: runs `work` with this media item's parent locked — the goal row for a
+ * goal-attached item, and (via withLockedLiveComment) the comment's goal row for
+ * a comment-attached one, so both share one lock order. Returns `null` when the
+ * parent is missing, foreign or deleted, which the caller reports as forbidden.
+ *
+ * This replaces the old `canAttachMedia` boolean: a check whose answer is stale
+ * the instant it returns cannot protect the insert that follows it.
+ */
+async function withLockedMediaParent<T>(
   userId: string,
   values: Pick<NewMediaItem, "goalId" | "commentId">,
-): Promise<boolean> {
+  work: (tx: Transaction) => Promise<T>,
+): Promise<T | null> {
   if (values.goalId) {
-    const [goal] = await db
-      .select({ id: goals.id })
-      .from(goals)
-      .where(and(eq(goals.id, values.goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
-      .limit(1);
-    return !!goal;
+    return withLockedLiveGoal(userId, values.goalId, (tx) => work(tx));
   }
   if (values.commentId) {
-    const [row] = await db
-      .select({ id: comments.id })
-      .from(comments)
-      .innerJoin(goals, eq(goals.id, comments.goalId))
-      .where(
-        and(
-          eq(comments.id, values.commentId),
-          eq(goals.userId, userId),
-          isNull(comments.deletedAt),
-          isNull(goals.deletedAt),
-        ),
-      )
-      .limit(1);
-    return !!row;
+    return withLockedLiveComment(userId, values.commentId, (tx) => work(tx));
   }
-  return false;
+  return null;
 }
 
 /**
@@ -142,16 +139,18 @@ export async function insertMediaItem(
   userId: string,
   values: NewMediaItem,
 ): Promise<InsertMediaResult> {
-  const allowed = await canAttachMedia(userId, values);
-  if (!allowed) return { status: "forbidden" };
-
   // No conflict target: the partial unique index on storage_path
-  // (drizzle/0007_media_storage_path_unique.sql) covers live rows only, and a
-  // target-less ON CONFLICT DO NOTHING arbitrates over every unique index —
-  // including partial ones — so this stays correct (just never idempotent)
-  // even before that migration is applied by hand.
-  const [row] = await db.insert(mediaItems).values(values).onConflictDoNothing().returning();
-  if (row) return { status: "inserted", item: row };
+  // (drizzle/0007_media_storage_path_unique.sql — confirmed applied by the
+  // 2026-07-20 probe run, section A07) covers live rows only, and a target-less
+  // ON CONFLICT DO NOTHING arbitrates over every unique index, including
+  // partial ones.
+  const result = await withLockedMediaParent(userId, values, async (tx) => {
+    const [row] = await tx.insert(mediaItems).values(values).onConflictDoNothing().returning();
+    return { row: row ?? null };
+  });
+
+  if (result === null) return { status: "forbidden" };
+  if (result.row) return { status: "inserted", item: result.row };
 
   const [existing] = await db
     .select(getTableColumns(mediaItems))

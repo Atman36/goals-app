@@ -1,5 +1,6 @@
 import { and, asc, eq, exists, getTableColumns, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
 import { checklistItems, goals, type ChecklistItem } from "@/lib/db/schema";
 
 type NewChecklistItem = typeof checklistItems.$inferInsert;
@@ -38,19 +39,18 @@ export async function listChecklistItems(
     .orderBy(asc(checklistItems.sortOrder), asc(checklistItems.createdAt));
 }
 
+/** GA-015: the liveness check and the insert share one transaction with the
+ *  goal row locked, so a goal soft-deleted mid-flight cannot end up with a new
+ *  live item under it. See lib/db/queries/parent-lock.ts. */
 export async function insertChecklistItem(
   userId: string,
   values: NewChecklistItem,
 ): Promise<ChecklistItem | null> {
-  const [goal] = await db
-    .select({ id: goals.id })
-    .from(goals)
-    .where(and(eq(goals.id, values.goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
-    .limit(1);
-  if (!goal) return null;
-
-  const [row] = await db.insert(checklistItems).values(values).returning();
-  return row;
+  const row = await withLockedLiveGoal(userId, values.goalId, async (tx) => {
+    const [inserted] = await tx.insert(checklistItems).values(values).returning();
+    return inserted ?? null;
+  });
+  return row ?? null;
 }
 
 export async function setChecklistItemDone(

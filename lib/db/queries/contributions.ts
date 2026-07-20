@@ -1,5 +1,6 @@
 import { and, desc, eq, exists, getTableColumns, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
 import { contributions, goals, type Contribution, type NewContribution } from "@/lib/db/schema";
 
 export async function listContributions(
@@ -116,20 +117,25 @@ export async function insertContributionIdempotent(
   userId: string,
   values: NewContribution,
 ): Promise<InsertContributionResult> {
-  const [goal] = await db
-    .select({ id: goals.id })
-    .from(goals)
-    .where(and(eq(goals.id, values.goalId), eq(goals.userId, userId), isNull(goals.deletedAt)))
-    .limit(1);
-  if (!goal) return { status: "goal_not_found" };
+  // GA-015/GA-016: the parent check and the insert run in one transaction with
+  // the goal row locked. That closes two races at once — a goal soft-deleted
+  // between check and insert, and a currency edit that observed "no
+  // contributions yet" while this insert was in flight (updateGoalWithRevision
+  // contends for the same lock). See lib/db/queries/parent-lock.ts.
+  // The result is wrapped so that `null` from the helper means exactly one
+  // thing — the goal is not live/owned. An unwrapped `row ?? null` would
+  // collide with the idempotent-conflict case, which is not a parent failure.
+  const result = await withLockedLiveGoal(userId, values.goalId, async (tx) => {
+    const [row] = await tx
+      .insert(contributions)
+      .values(values)
+      .onConflictDoNothing({ target: contributions.id })
+      .returning();
+    return { row: row ?? null };
+  });
 
-  const [row] = await db
-    .insert(contributions)
-    .values(values)
-    .onConflictDoNothing({ target: contributions.id })
-    .returning();
-
-  if (row) return { status: "created", contribution: row };
+  if (result === null) return { status: "goal_not_found" };
+  if (result.row) return { status: "created", contribution: result.row };
 
   return { status: "conflict", existing: await findContributionForUser(userId, values.id) };
 }

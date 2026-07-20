@@ -51,13 +51,17 @@ export async function saveCheckin(input: unknown): Promise<CheckinActionResult> 
   const goal = await getGoalWithDetails(user.id, parsed.data.goalId);
   if (!goal || goal.status !== "active") return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
 
-  await upsertCheckinRow({
+  // GA-015: the goal read above stays (it is what enforces "active only"), but
+  // the write re-verifies liveness under a row lock — null means the goal was
+  // deleted in the meantime, which must not be reported as a saved check-in.
+  const saved = await upsertCheckinRow(user.id, {
     goalId: parsed.data.goalId,
     date,
     outcome: parsed.data.outcome,
     feeling: parsed.data.feeling,
     note: parsed.data.note,
   });
+  if (!saved) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
   log.info({ goalId: parsed.data.goalId, date }, "checkin saved");
 
   revalidatePath("/");

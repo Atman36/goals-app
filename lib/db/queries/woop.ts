@@ -20,10 +20,10 @@ export type SaveWoopResult = { status: "created" | "updated"; entry: WoopEntry }
  *
  * Deciding *and* writing under the goal row lock makes the second tab observe
  * the first tab's committed row and update it instead. The database-level
- * backstop is drizzle/0009_woop_one_row_per_goal.sql, which is authored but not
- * yet applied — this function must therefore stand on its own, so it also
- * repairs any pre-existing duplicate by updating the newest row rather than
- * assuming uniqueness.
+ * backstop is the partial unique index on (goal_id) WHERE deleted_at IS NULL
+ * (drizzle/0009, narrowed to live rows by drizzle/0011). This function still
+ * stands on its own rather than assuming uniqueness: it repairs any pre-existing
+ * duplicate by updating the newest live row.
  */
 export async function saveWoopEntry(
   userId: string,
@@ -34,7 +34,7 @@ export async function saveWoopEntry(
     const [existing] = await tx
       .select({ id: woopEntries.id })
       .from(woopEntries)
-      .where(eq(woopEntries.goalId, goalId))
+      .where(and(eq(woopEntries.goalId, goalId), isNull(woopEntries.deletedAt)))
       .orderBy(desc(woopEntries.createdAt))
       .limit(1);
 
@@ -55,9 +55,9 @@ export async function saveWoopEntry(
   });
 }
 
-// T12: goal page read/edit + "прожить образ" support. No deletedAt on this
-// table (per lib/db/schema.ts) — ownership is scoped through the parent goal,
-// same as insertWoopEntry above.
+// T12: goal page read/edit + "прожить образ" support. Since drizzle/0011 this
+// table has a deletedAt like every other goal child, so reads filter it and the
+// goal cascade can close it; ownership is still scoped through the parent goal.
 
 /** Latest WOOP entry for a goal (there should only ever be one — Decision 1
  *  in T12's spec, one entry per goal, upsert on save — but `createdAt desc`
@@ -74,7 +74,7 @@ export async function getWoopByGoal(userId: string, goalId: string): Promise<Woo
   const [row] = await db
     .select()
     .from(woopEntries)
-    .where(eq(woopEntries.goalId, goalId))
+    .where(and(eq(woopEntries.goalId, goalId), isNull(woopEntries.deletedAt)))
     .orderBy(desc(woopEntries.createdAt))
     .limit(1);
   return row ?? null;
@@ -85,7 +85,7 @@ export async function touchWoopLived(userId: string, goalId: string): Promise<Wo
     const [existing] = await tx
       .select({ id: woopEntries.id })
       .from(woopEntries)
-      .where(eq(woopEntries.goalId, goalId))
+      .where(and(eq(woopEntries.goalId, goalId), isNull(woopEntries.deletedAt)))
       .orderBy(desc(woopEntries.createdAt))
       .limit(1);
     if (!existing) return null;

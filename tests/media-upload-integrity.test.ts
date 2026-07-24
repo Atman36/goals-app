@@ -176,7 +176,24 @@ describe("CR-033: soft delete reports what actually happened", () => {
 
     expect(code).toContain("Promise<{ id: string } | null>");
     expect(code).toContain(".returning({ id: comments.id })");
-    expect(code).toContain("return deleted ?? null");
+    // A no-op UPDATE must still be reported as "nothing happened" — the early
+    // return replaced the old `return deleted ?? null` when the cascade below
+    // moved this function into a transaction.
+    expect(code).toContain("if (!deleted) return null;");
+  });
+
+  it("softDeleteComment cascades the soft delete to the comment's media, in one transaction", () => {
+    const code = source("lib/db/queries/comments.ts");
+
+    expect(code).toContain("db.transaction(");
+    expect(code).toContain("eq(mediaItems.commentId, commentId)");
+    // Soft delete only, and only rows that are still live.
+    expect(code).toContain("isNull(mediaItems.deletedAt)");
+    expect(code).not.toMatch(/\.delete\(mediaItems\)/);
+    // The cascade runs after the ownership-checked UPDATE, never before it.
+    expect(code.indexOf("if (!deleted) return null;")).toBeLessThan(
+      code.indexOf("eq(mediaItems.commentId, commentId)"),
+    );
   });
 
   it("deleteComment fails loudly when nothing was deleted", () => {

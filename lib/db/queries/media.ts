@@ -112,6 +112,33 @@ async function withLockedMediaParent<T>(
   values: Pick<NewMediaItem, "goalId" | "commentId">,
   work: (tx: Transaction) => Promise<T>,
 ): Promise<T | null> {
+  // GA-009: a row may legitimately name BOTH parents — a photo attached to a
+  // comment is also linked to that comment's goal so it shows up in the goal
+  // gallery (see registerMedia). What was never checked is that the two agree.
+  // Validating only the goal branch let `{ goalId: mine, commentId: <any> }`
+  // through, binding one row to two unrelated ownership chains; reads then
+  // disagree about which parent governs it (listMediaByGoal follows goalId,
+  // listAllMedia can reach it through either). The comment is re-read here under
+  // the goal's lock, so it cannot be soft-deleted or re-parented in the gap.
+  if (values.goalId && values.commentId) {
+    const commentId = values.commentId;
+    const goalId = values.goalId;
+    return withLockedLiveGoal(userId, goalId, async (tx) => {
+      const [comment] = await tx
+        .select({ id: comments.id })
+        .from(comments)
+        .where(
+          and(
+            eq(comments.id, commentId),
+            eq(comments.goalId, goalId),
+            isNull(comments.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!comment) return null;
+      return work(tx);
+    });
+  }
   if (values.goalId) {
     return withLockedLiveGoal(userId, values.goalId, (tx) => work(tx));
   }
@@ -133,23 +160,55 @@ export type InsertMediaResult =
   | { status: "inserted"; item: MediaItem }
   | { status: "duplicate"; item: MediaItem }
   | { status: "conflict" }
+  | { status: "quota_exceeded" }
   | { status: "forbidden" };
 
 export async function insertMediaItem(
   userId: string,
   values: NewMediaItem,
+  options: { maxPerGoal?: number } = {},
 ): Promise<InsertMediaResult> {
+  const { maxPerGoal } = options;
+
   // No conflict target: the partial unique index on storage_path
   // (drizzle/0007_media_storage_path_unique.sql — confirmed applied by the
   // 2026-07-20 probe run, section A07) covers live rows only, and a target-less
   // ON CONFLICT DO NOTHING arbitrates over every unique index, including
   // partial ones.
   const result = await withLockedMediaParent(userId, values, async (tx) => {
+    // GA-021: the quota is counted INSIDE the transaction that inserts, under
+    // the goal's FOR UPDATE lock. Counting in the action (or here, before the
+    // transaction) answers a question that is already stale when it returns:
+    // with 49 rows present, two concurrent registrations both saw 49 and both
+    // inserted, leaving 51. Because every media write for a goal locks that same
+    // goal row, the second writer now waits and re-counts 50.
+    if (maxPerGoal !== undefined && values.goalId) {
+      // A replay of an already-registered path consumes no new slot, so it must
+      // not be refused at the cap — registration is idempotent by contract
+      // (see InsertMediaResult) and a retry after a timeout would otherwise
+      // start failing for anyone sitting exactly on the limit. The partial
+      // unique index on storage_path makes this lookup a single index probe.
+      const [alreadyRegistered] = await tx
+        .select({ id: mediaItems.id })
+        .from(mediaItems)
+        .where(and(eq(mediaItems.storagePath, values.storagePath), isNull(mediaItems.deletedAt)))
+        .limit(1);
+
+      if (!alreadyRegistered) {
+        const [existing] = await tx
+          .select({ value: count() })
+          .from(mediaItems)
+          .where(and(eq(mediaItems.goalId, values.goalId), isNull(mediaItems.deletedAt)));
+        if ((existing?.value ?? 0) >= maxPerGoal) return { quotaExceeded: true, row: null };
+      }
+    }
+
     const [row] = await tx.insert(mediaItems).values(values).onConflictDoNothing().returning();
-    return { row: row ?? null };
+    return { quotaExceeded: false, row: row ?? null };
   });
 
   if (result === null) return { status: "forbidden" };
+  if (result.quotaExceeded) return { status: "quota_exceeded" };
   if (result.row) return { status: "inserted", item: result.row };
 
   const [existing] = await db

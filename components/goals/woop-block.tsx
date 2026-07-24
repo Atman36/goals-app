@@ -102,6 +102,9 @@ export function WoopBlock({ goalId, initialWoop }: { goalId: string; initialWoop
       lastLivedAt: previous?.lastLivedAt ?? null,
       createdAt: previous?.createdAt ?? new Date(),
       updatedAt: new Date(),
+      // A row shown in this block is live by definition — reads filter deleted
+      // ones out (drizzle/0011 gave woop_entries a deletedAt).
+      deletedAt: null,
     };
     setWoop(optimistic);
     setEditing(false);

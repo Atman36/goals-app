@@ -23,8 +23,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - JSON responses serialize bigint as strings.
 
 ## Data access
-- Soft delete only (goals, contributions, checklist_items, comments, media_items):
-  set `deletedAt`, never hard-delete.
+- Soft delete only (goals, contributions, checklist_items, comments, media_items,
+  checkins, woop_entries): set `deletedAt`, never hard-delete. `goal_revisions` is
+  the deliberate exception — append-only history that outlives its goal.
+- Every child write takes `FOR UPDATE` on its **goal** row first and writes in that
+  same transaction (`lib/db/queries/parent-lock.ts`). The goal row is the single
+  serialization point in the whole app — never check a parent in a separate round
+  trip, and never lock a comment instead of its goal.
+- Anything read before the lock and acted on after it must be re-compared under the
+  lock (goal currency, goal status), or it is a race by construction.
 - All reads go through `lib/db/queries/*`, which centralize `deletedAt IS NULL` +
   `userId` scoping — never hand-roll these filters in pages/actions.
 - Every Server Action / route handler: call `getCurrentUser()` first, zod-parse
@@ -47,6 +54,25 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## docs/
 - `docs/` is private and gitignored (PRD, build prompt, prototype live there
   locally) — never commit it or reference its contents in public artifacts.
+
+## Migrations
+- NEVER `drizzle-kit migrate` / `db:push` / `db:generate` — the live DB has no
+  `drizzle.__drizzle_migrations` and generate crashes on a bigint default.
+- Apply: `npm run db:backup`, then
+  `node --env-file=.env scripts/apply-migration.mjs drizzle/00XX.sql --backup-id=<id>`.
+  It runs the file and its ledger row in ONE transaction.
+- Applied state lives in `public.manual_migration_ledger` (0010), never in a file
+  comment. `node --env-file=.env scripts/migration-status.mjs` is the release gate.
+- An applied file is immutable — its sha256 is recorded. Supersede it with a new
+  migration instead of editing it.
+- New tables in `public` must REVOKE from anon/authenticated and enable RLS
+  explicitly (0012 fixed the schema default, but only for tables created by
+  `postgres`).
+
+## Deployment access
+- `APP_ACCESS_TOKEN` (optional) turns on the token gate in `proxy.ts` / `lib/access.ts`.
+  Unset = gate off, so local dev is unaffected. It is a deployment lock, not auth:
+  `getCurrentUser()` still always returns the owner.
 
 ## Verification
 Run before considering any change done:

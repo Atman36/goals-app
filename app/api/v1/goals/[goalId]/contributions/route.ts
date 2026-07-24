@@ -23,6 +23,13 @@ import { jsonData, jsonError } from "@/app/api/v1/_lib/serialize";
  */
 const IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused";
 
+/**
+ * 409 code for "the goal's currency changed while this amount was in flight"
+ * (GA-016). Same contract as above: the client keys its recovery on this exact
+ * string, and the client copy lives in components/goals/quick-add-sheet.tsx.
+ */
+const GOAL_CURRENCY_CHANGED = "goal_currency_changed";
+
 function jsonConflict(message: string, code: string) {
   return NextResponse.json({ error: message, code }, { status: 409 });
 }
@@ -99,11 +106,28 @@ export async function POST(
     occurredAt: parsed.data.occurredAt,
   };
 
-  const result = await insertContributionIdempotent(user.id, attempted);
+  // GA-016: `goal.currency` was read before the write and is what this amount is
+  // priced in. Handing it to the insert lets the locked row settle the question —
+  // an edit that switched the goal's currency in the gap must not reinterpret the
+  // amount, because that is irreversible once the first contribution exists.
+  const result = await insertContributionIdempotent(user.id, attempted, {
+    expectedCurrency: goal.currency,
+  });
 
   if (result.status === "goal_not_found") {
     // Raced with a delete between the ownership check above and the insert.
     return jsonError("Цель не найдена", 404);
+  }
+
+  if (result.status === "currency_changed") {
+    log.warn(
+      { goalId, expected: goal.currency, actual: result.currency },
+      "contribution rejected: goal currency changed while the amount was in flight",
+    );
+    return jsonConflict(
+      "Валюта цели изменилась, пока сохранялся взнос. Обновите страницу и введите сумму заново.",
+      GOAL_CURRENCY_CHANGED,
+    );
   }
 
   if (result.status === "conflict") {

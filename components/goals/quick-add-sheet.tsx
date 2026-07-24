@@ -62,14 +62,25 @@ interface ContributionPostResponse {
 /** Must match the `code` the contributions route sends with its 409. */
 const IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused";
 
+/** Likewise — GA-016: the goal's currency changed while this amount was in flight. */
+const GOAL_CURRENCY_CHANGED = "goal_currency_changed";
+
 /**
  * How a submit ended, from the idempotency key's point of view.
  * - `created`   — the server stored this payload under the key.
  * - `replayed`  — the key already held a byte-identical payload (exact replay).
  * - `key_reused`— the key already held a DIFFERENT payload; this data was not stored.
+ * - `currency_changed` — the goal's currency changed while this amount was in flight;
+ *                 nothing was stored, and the amount must be re-entered under the new
+ *                 currency rather than reinterpreted under it (GA-016).
  * - `unknown`   — network error / timeout / 5xx: the server may or may not have stored it.
  */
-export type ContributionSubmitOutcome = "created" | "replayed" | "key_reused" | "unknown";
+export type ContributionSubmitOutcome =
+  | "created"
+  | "replayed"
+  | "key_reused"
+  | "currency_changed"
+  | "unknown";
 
 /**
  * Idempotency-key rotation contract (CR-025).
@@ -250,6 +261,12 @@ export function QuickAddSheet({
         throw new ContributionSubmitError(
           "key_reused",
           "Этот взнос не сохранён: ключ уже занят другими данными. Попробуйте ещё раз.",
+        );
+      }
+      if (res.status === 409 && body?.code === GOAL_CURRENCY_CHANGED) {
+        throw new ContributionSubmitError(
+          "currency_changed",
+          "Валюта цели изменилась. Взнос не сохранён — обновите страницу и введите сумму заново.",
         );
       }
       if (!res.ok || !body?.data) {

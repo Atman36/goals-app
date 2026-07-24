@@ -74,7 +74,13 @@ export async function upsertCheckinRow(
   // the action performed in an earlier round trip. The upsert itself is
   // unchanged; what changed is that the goal cannot be soft-deleted between the
   // liveness check and this write. See lib/db/queries/parent-lock.ts.
-  const row = await withLockedLiveGoal(userId, values.goalId, async (tx) => {
+  const row = await withLockedLiveGoal(userId, values.goalId, async (tx, goal) => {
+    // "Active only" is checked in the action too, but that read happens before
+    // the lock: a goal archived in the gap would still take a check-in, and the
+    // day's entry would sit on a goal the user has stopped working on. The
+    // locked row is the only answer that cannot go stale before the write.
+    if (goal.status !== "active") return null;
+
     const [upserted] = await tx
       .insert(checkins)
       .values(values)

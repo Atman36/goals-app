@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, sql, sum, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, inArray, isNull, sql, sum, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   checkins,
@@ -267,12 +267,33 @@ export async function softDeleteGoal(userId: string, goalId: string): Promise<st
       .returning({ id: goals.id });
     if (!row) return null;
 
-    for (const child of [contributions, checklistItems, comments, mediaItems, checkins]) {
+    // woopEntries joined this list in drizzle/0011, which gave it a deletedAt.
+    // goal_revisions deliberately stays out: it is append-only history of this
+    // goal and must outlive it (SPEC-16 keeps it INSERT-only for the same reason).
+    for (const child of [contributions, checklistItems, comments, mediaItems, checkins, woopEntries]) {
       await tx
         .update(child)
         .set({ deletedAt: now })
         .where(and(eq(child.goalId, goalId), isNull(child.deletedAt)));
     }
+
+    // Media attached to this goal's COMMENTS carries no goalId of its own, so
+    // the loop above cannot see it — without this it stayed live under a deleted
+    // goal, which is the row shape probe A13 found.
+    await tx
+      .update(mediaItems)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          isNull(mediaItems.deletedAt),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(comments)
+              .where(and(eq(comments.id, mediaItems.commentId), eq(comments.goalId, goalId))),
+          ),
+        ),
+      );
 
     await tx
       .update(users)
@@ -304,6 +325,14 @@ export type SetGoalStatusResult =
  *
  * A no-op (goal already in `status`) is reported as ok/changed:false and writes
  * nothing — re-marking an achieved goal must not move its achievedAt either.
+ *
+ * GA-025: leaving "active" also releases the focus pointer, in the SAME
+ * transaction and with the same conditional WHERE that softDeleteGoal uses. The
+ * action used to do this afterwards by comparing the `focusGoalId` it had read
+ * at the start of the request against this goal, then writing NULL
+ * unconditionally — so a different goal focused from another tab in the meantime
+ * was silently unfocused, and a crash between the two statements left the
+ * pointer on a non-active goal.
  */
 export async function setGoalStatus(
   userId: string,
@@ -312,15 +341,28 @@ export async function setGoalStatus(
 ): Promise<SetGoalStatusResult> {
   const scope = and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt));
 
-  const [row] = await db
-    .update(goals)
-    .set({
-      status,
-      ...(status === "achieved" ? { achievedAt: new Date() } : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(scope, inArray(goals.status, goalStatusSourcesFor(status))))
-    .returning();
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(goals)
+      .set({
+        status,
+        ...(status === "achieved" ? { achievedAt: new Date() } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(scope, inArray(goals.status, goalStatusSourcesFor(status))))
+      .returning();
+
+    // Only when this goal actually left "active", and only if the pointer still
+    // names it — never a blanket NULL.
+    if (updated && status !== "active") {
+      await tx
+        .update(users)
+        .set({ focusGoalId: null })
+        .where(and(eq(users.id, userId), eq(users.focusGoalId, goalId)));
+    }
+
+    return updated;
+  });
 
   if (row) return { ok: true, goal: row, changed: true };
 

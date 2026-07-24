@@ -125,7 +125,13 @@ export default async function TodayPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <GoalCard goal={focusGoal} isFocus />
                 </div>
+                {/* Keyed by the day. A check-in submitted after midnight is
+                    rejected as stale (GA-013) and the card offers a refresh;
+                    router.refresh() keeps client state, so without this key the
+                    new day's card would still hold yesterday's answers and would
+                    save them under today the moment the user touched a control. */}
                 <CheckinCard
+                  key={today}
                   goalId={focusGoal.id}
                   expectedDate={today}
                   initial={

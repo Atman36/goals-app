@@ -33,7 +33,18 @@ export default async function EditGoalPage({
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
       <h1 className="font-display text-2xl font-bold tracking-tight">Редактирование цели</h1>
-      <GoalForm mode="edit" goal={goal} currencyLocked={currencyLocked} initialCoverUrl={initialCoverUrl} />
+      {/* Keyed by the version the form is rendered from. When a save is rejected
+          as stale (GA-012) the form's "Обновить страницу" button calls
+          router.refresh(), which by design preserves client state — without a
+          key the inputs would keep showing the losing edit and the submit button
+          would stay disabled forever. A new updatedAt means a new form. */}
+      <GoalForm
+        key={goal.updatedAt.toISOString()}
+        mode="edit"
+        goal={goal}
+        currencyLocked={currencyLocked}
+        initialCoverUrl={initialCoverUrl}
+      />
       <GoalDangerActions goalId={goal.id} status={goal.status} />
     </div>
   );

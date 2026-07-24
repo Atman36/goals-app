@@ -146,6 +146,11 @@ export const woopEntries = pgTable("woop_entries", {
   lastLivedAt: timestamp("last_lived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  // Added by drizzle/0011: without it a goal's soft delete could not close its
+  // WOOP, which left live rows under deleted goals (audit probe A13). The
+  // one-WOOP-per-goal uniqueness became partial in the same migration, so a
+  // closed WOOP does not reserve its goal forever.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 // Daily emotion check-in for a goal — growth-reactor v5 §5/§6/§12. Goal-child

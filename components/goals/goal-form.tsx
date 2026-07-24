@@ -8,7 +8,7 @@ import { clientGoalSchema, type ClientGoalInput } from "@/components/goals/goal-
 import { createGoal, updateGoal } from "@/lib/actions/goals";
 import { registerMedia } from "@/lib/actions/media";
 import { CoverUpload, type CoverUploadResult } from "@/components/goals/cover-upload";
-import { toMajorUnits } from "@/lib/utils/money";
+import { toMajorUnitsString } from "@/lib/utils/money";
 import type { Currency } from "@/lib/validators/goal";
 import type { GoalWithProgress } from "@/lib/db/queries/goals";
 import { GOAL_SPHERES, SPHERE_LABELS } from "@/lib/spheres";
@@ -62,10 +62,15 @@ export function GoalForm(props: GoalFormProps) {
           description: props.goal.description ?? "",
           deadline: props.goal.deadline,
           currencySymbol: props.goal.currency ?? undefined,
+          // Exact string conversion, not the display-only numeric one: these
+          // defaults are not display-only — the edit form posts them straight
+          // back, so a Number hop here would silently rewrite an amount past
+          // 2^53 on a save that only meant to change the title
+          // (GA-014 / MONEY-001).
           targetAmountMajor:
-            props.goal.targetAmount != null ? String(toMajorUnits(props.goal.targetAmount)) : "",
+            props.goal.targetAmount != null ? toMajorUnitsString(props.goal.targetAmount) : "",
           initialAmountMajor:
-            props.goal.initialAmount != null ? String(toMajorUnits(props.goal.initialAmount)) : "0",
+            props.goal.initialAmount != null ? toMajorUnitsString(props.goal.initialAmount) : "0",
           sphere: props.goal.sphere ?? "",
         }
       : {

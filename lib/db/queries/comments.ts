@@ -1,7 +1,7 @@
 import { and, asc, eq, exists, getTableColumns, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
-import { comments, goals, type Comment } from "@/lib/db/schema";
+import { comments, goals, mediaItems, type Comment } from "@/lib/db/schema";
 
 type NewComment = typeof comments.$inferInsert;
 
@@ -44,28 +44,44 @@ export async function softDeleteComment(
   userId: string,
   commentId: string,
 ): Promise<{ id: string } | null> {
-  const [deleted] = await db
-    .update(comments)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(comments.id, commentId),
-        isNull(comments.deletedAt),
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(goals)
-            .where(
-              and(
-                eq(goals.id, comments.goalId),
-                eq(goals.userId, userId),
-                isNull(goals.deletedAt),
-              ),
-            ),
-        ),
-      ),
-    )
-    .returning({ id: comments.id });
+  return db.transaction(async (tx) => {
+    const now = new Date();
 
-  return deleted ?? null;
+    const [deleted] = await tx
+      .update(comments)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          eq(comments.id, commentId),
+          isNull(comments.deletedAt),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(goals)
+              .where(
+                and(
+                  eq(goals.id, comments.goalId),
+                  eq(goals.userId, userId),
+                  isNull(goals.deletedAt),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: comments.id });
+
+    if (!deleted) return null;
+
+    // A photo attached to this comment has no life of its own: the comment is
+    // its parent. Leaving it live left a row whose only route to an owner ran
+    // through a deleted comment — invisible today because every read joins the
+    // parent chain, but exactly the shape probe A13 found, and it becomes
+    // reachable as soon as a policy reads media without its parent.
+    await tx
+      .update(mediaItems)
+      .set({ deletedAt: now })
+      .where(and(eq(mediaItems.commentId, commentId), isNull(mediaItems.deletedAt)));
+
+    return deleted;
+  });
 }

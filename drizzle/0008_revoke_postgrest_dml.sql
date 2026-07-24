@@ -1,7 +1,10 @@
 -- 0008 — отзыв прямого DML у ролей PostgREST (anon / authenticated)
 --
--- НЕ ПРИМЕНЕНА. Применять вручную (db:generate/db:push в проекте сломаны):
---   node -e 'import("postgres").then(async ({default:pg})=>{const s=pg(process.env.DATABASE_URL,{prepare:false});await s.unsafe(require("fs").readFileSync("drizzle/0008_revoke_postgrest_dml.sql","utf8"));await s.end()})'
+-- СОСТОЯНИЕ ПРИМЕНЕНИЯ ЭТОГО ФАЙЛА ЗДЕСЬ НЕ ОПИСАНО И ОПИСАНО БЫТЬ НЕ МОЖЕТ.
+-- Единственный источник истины — таблица public.manual_migration_ledger (миграция 0010):
+--   node --env-file=.env scripts/migration-status.mjs
+-- Применять только через: node --env-file=.env scripts/apply-migration.mjs <файл>
+-- (drizzle-kit migrate / db:push в этом репозитории запрещены — см. 0010).
 -- Перед применением — свежий бэкап: npm run db:backup
 --
 -- ЗАЧЕМ. Проверено на живом проекте 2026-07-20:

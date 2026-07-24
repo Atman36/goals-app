@@ -126,10 +126,10 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
     return { ok: false, error: "Некорректный путь файла" };
   }
 
-  // The quota is re-checked here, not only in createSignedUpload: registerMedia
-  // is its own public POST endpoint, so a caller can skip the signing step (or
-  // race several uploads past a single count) and the 50-image cap would be
-  // advisory only (CR-009).
+  // GA-021: the binding quota check lives inside insertMediaItem, under the
+  // goal's row lock. This one stays only to fail fast with a clear message
+  // before the work of inserting — it is UX, not enforcement, and two callers
+  // racing past it are caught by the transaction below.
   if (parsed.data.goalId) {
     const existingCount = await countMediaForGoal(user.id, parsed.data.goalId);
     if (existingCount >= MAX_MEDIA_PER_GOAL) {
@@ -138,17 +138,25 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
     }
   }
 
-  const inserted = await insertMediaItem(user.id, {
-    goalId: parsed.data.goalId ?? null,
-    commentId: parsed.data.commentId ?? null,
-    storagePath: parsed.data.path,
-    width: parsed.data.width ?? null,
-    height: parsed.data.height ?? null,
-    caption: parsed.data.caption ?? null,
-  });
+  const inserted = await insertMediaItem(
+    user.id,
+    {
+      goalId: parsed.data.goalId ?? null,
+      commentId: parsed.data.commentId ?? null,
+      storagePath: parsed.data.path,
+      width: parsed.data.width ?? null,
+      height: parsed.data.height ?? null,
+      caption: parsed.data.caption ?? null,
+    },
+    { maxPerGoal: MAX_MEDIA_PER_GOAL },
+  );
 
   if (inserted.status === "forbidden") {
     return { ok: false, error: "Не удалось прикрепить изображение" };
+  }
+  if (inserted.status === "quota_exceeded") {
+    log.warn({ goalId: parsed.data.goalId }, "registerMedia: quota exceeded under lock");
+    return { ok: false, error: "Не более 50 изображений на цель" };
   }
   if (inserted.status === "conflict") {
     log.warn({ goalId: parsed.data.goalId }, "registerMedia: storage path already registered");

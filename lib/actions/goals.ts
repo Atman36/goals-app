@@ -10,9 +10,8 @@ import {
   type GoalWithProgress,
   type SetGoalStatusResult,
 } from "@/lib/db/queries/goals";
-import { setUserFocusGoal } from "@/lib/db/queries/users";
 import { updateGoalWithRevision } from "@/lib/db/queries/goal-revisions";
-import type { NewGoal, User } from "@/lib/db/schema";
+import type { NewGoal } from "@/lib/db/schema";
 import { goalSchema, goalUpdateSchema, goalIdSchema, type GoalInput } from "@/lib/validators/goal";
 import { woopInputSchema, type WoopInput } from "@/lib/validators/woop";
 import { parseMajorAmountToMinor, calcFinancialProgress } from "@/lib/utils/money";
@@ -39,15 +38,6 @@ const STALE_GOAL_ERROR =
 /** Maps a failed status transition onto the action's error string. */
 function statusErrorFor(result: Extract<SetGoalStatusResult, { ok: false }>): string {
   return result.reason === "not_found" ? GENERIC_NOT_FOUND_ERROR : ILLEGAL_TRANSITION_ERROR;
-}
-
-/** The focus goal must always be an active, non-deleted goal (setFocusGoal and
- *  getFocusGoal both assert that) — so archiving, achieving or deleting the
- *  focused goal has to release the pointer instead of leaving a stale one that
- *  only some views filter out. */
-async function clearFocusIfPointingAt(user: User, goalId: string): Promise<void> {
-  if (user.focusGoalId !== goalId) return;
-  await setUserFocusGoal(user.id, null);
 }
 
 /** Parses a major-unit amount string straight into bigint minor units, or null
@@ -289,10 +279,8 @@ export async function archiveGoal(goalId: string): Promise<SimpleActionResult> {
 
   const updated = result.goal;
 
-  // An archived goal is no longer active, so it must stop being the focus goal
-  // — otherwise the dashboard/today badge keeps pointing at it (getFocusGoal
-  // already filters by status, leaving the two views disagreeing).
-  await clearFocusIfPointingAt(user, goalId);
+  // The focus pointer is released by setGoalStatus itself, in the same
+  // transaction and only if it still names this goal (GA-025).
 
   if (result.changed) {
     track({
@@ -359,9 +347,7 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
 
   const updated = result.goal;
 
-  // Achieved goals aren't active, so they can't stay the focus goal (same
-  // reasoning as archiveGoal).
-  await clearFocusIfPointingAt(user, goalId);
+  // Focus is released inside setGoalStatus, transactionally (GA-025).
 
   if (!result.changed) {
     // Already achieved — idempotent success, and notably achievedAt was left

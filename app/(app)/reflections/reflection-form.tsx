@@ -87,6 +87,7 @@ export function ReflectionForm({
   defaultGoalId,
   preselectedPrevOutcome = null,
   prevPromiseGoalId = null,
+  prevPromiseGoalActive = false,
   prevGoalSteps = [],
 }: {
   current: ReflectionWithPromiseGoal | null;
@@ -110,6 +111,10 @@ export function ReflectionForm({
   /** T14: the previous promise's goal, or null for an orphan promise
    *  (Decisions D2) — gates the plan-adjustment node below. */
   prevPromiseGoalId?: string | null;
+  /** T16 FIX-3: whether that goal is still live and active. A deleted,
+   *  archived or achieved goal cannot accept an adjustment, so the node is
+   *  not offered at all rather than failing on submit. */
+  prevPromiseGoalActive?: boolean;
   /** T14: that goal's open checklist steps, for the same node. Empty when
    *  there is no previous-promise goal. */
   prevGoalSteps?: AdjustmentStepOption[];
@@ -347,6 +352,7 @@ export function ReflectionForm({
           status: state.status,
           prevOutcome: selectedPrevOutcome,
           prevPromiseGoalId,
+          prevPromiseGoalActive,
         }) ? (
           <PlanAdjustmentStep
             goalId={prevPromiseGoalId}

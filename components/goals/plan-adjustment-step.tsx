@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,14 +49,13 @@ export function PlanAdjustmentStep({
   source,
   expectedToken,
   steps,
-  onDone,
 }: {
   goalId: string;
   source: PlanAdjustmentSource;
   expectedToken: string;
   steps: AdjustmentStepOption[];
-  onDone?: () => void;
 }) {
+  const router = useRouter();
   const [barrier, setBarrier] = useState<PlanAdjustmentBarrier | null>(null);
   const [decision, setDecision] = useState<MainDecision | null>(null);
   const [smallerStepId, setSmallerStepId] = useState<string | null>(null);
@@ -65,11 +65,17 @@ export function PlanAdjustmentStep({
   const [copingTrigger, setCopingTrigger] = useState("");
   const [copingAction, setCopingAction] = useState("");
   const [result, setResult] = useState<SavePlanAdjustmentResult | null>(null);
-  // Set once a pause_goal/drop_goal submit succeeds. Deliberately does NOT
-  // trigger onDone (unlike the main flow below): the handoff line + "Открыть
-  // цель" link this unlocks must stay on screen until the person acts on
-  // them, not vanish the instant the card would otherwise be dismissed.
-  const [exitDone, setExitDone] = useState(false);
+  // T16 FIX-1: set once the main submit succeeds. This node used to call a
+  // dismissal callback instead, and the check-in card answered it by unmounting
+  // the whole node in the same commit that set `result` — so the confirmation,
+  // and in particular the "this was a duplicate, the step was NOT changed"
+  // message, was never painted. The pickers collapse; node and message stay.
+  const [done, setDone] = useState(false);
+  // T16 FIX-5: how a pause_goal/drop_goal submit resolved. A conflicting
+  // resubmit records nothing, so the "Записал…" handoff must not claim it did —
+  // the duplicate message in the result line below carries the truth instead.
+  // The "Открыть цель" link is useful either way and shows in both cases.
+  const [exitState, setExitState] = useState<"recorded" | "duplicate" | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const availability = decisionAvailability(steps);
@@ -122,7 +128,7 @@ export function PlanAdjustmentStep({
       setResult(res);
       if (res.ok) {
         resetDecisionFields();
-        onDone?.();
+        setDone(true);
       }
     });
   }
@@ -132,33 +138,35 @@ export function PlanAdjustmentStep({
     startTransition(async () => {
       const res = await savePlanAdjustment({ goalId, source, expectedToken, barrier, decision: exitDecision });
       setResult(res);
-      if (res.ok) setExitDone(true);
+      if (res.ok) setExitState(res.duplicate ? "duplicate" : "recorded");
     });
   }
 
   return (
     <div className="flex flex-col gap-4 border-t pt-4">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium">{ADJUSTMENT_BARRIER_HEADING}</p>
-        <p className="text-xs text-muted-foreground">{ADJUSTMENT_BARRIER_HINT}</p>
-        <div className="flex flex-wrap gap-2">
-          {PLAN_ADJUSTMENT_BARRIERS.map((b) => (
-            <Button
-              key={b}
-              type="button"
-              size="sm"
-              variant={barrier === b ? "default" : "outline"}
-              aria-pressed={barrier === b}
-              disabled={isPending}
-              onClick={() => setBarrier(b)}
-            >
-              {BARRIER_LABELS[b]}
-            </Button>
-          ))}
+      {done ? null : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">{ADJUSTMENT_BARRIER_HEADING[source]}</p>
+          <p className="text-xs text-muted-foreground">{ADJUSTMENT_BARRIER_HINT}</p>
+          <div className="flex flex-wrap gap-2">
+            {PLAN_ADJUSTMENT_BARRIERS.map((b) => (
+              <Button
+                key={b}
+                type="button"
+                size="sm"
+                variant={barrier === b ? "default" : "outline"}
+                aria-pressed={barrier === b}
+                disabled={isPending}
+                onClick={() => setBarrier(b)}
+              >
+                {BARRIER_LABELS[b]}
+              </Button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {barrier ? (
+      {barrier && !done ? (
         <>
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">{ADJUSTMENT_DECISION_HEADING}</p>
@@ -288,7 +296,7 @@ export function PlanAdjustmentStep({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={isPending || exitDone}
+                disabled={isPending || exitState !== null}
                 onClick={() => handleExit("pause_goal")}
               >
                 {DECISION_LABELS.pause_goal}
@@ -297,32 +305,50 @@ export function PlanAdjustmentStep({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={isPending || exitDone}
+                disabled={isPending || exitState !== null}
                 onClick={() => handleExit("drop_goal")}
               >
                 {DECISION_LABELS.drop_goal}
               </Button>
             </div>
-            {exitDone ? (
-              <div className="flex flex-col items-start gap-2">
-                <p className="text-sm text-muted-foreground">{ADJUSTMENT_EXIT_HANDOFF}</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  nativeButton={false}
-                  render={<Link href={`/goals/${goalId}`}>Открыть цель</Link>}
-                />
-              </div>
-            ) : null}
           </div>
         </>
       ) : null}
 
+      {/* T16 FIX-5: sits outside the picker block so the handoff survives the
+          pickers collapsing, and so the link is offered whether the exit
+          decision was recorded or merely conflicted. The "Записал…" line is
+          shown ONLY when something really was recorded. */}
+      {exitState ? (
+        <div className="flex flex-col items-start gap-2">
+          {exitState === "recorded" ? (
+            <p className="text-sm text-muted-foreground">{ADJUSTMENT_EXIT_HANDOFF}</p>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`/goals/${goalId}`}>Открыть цель</Link>}
+          />
+        </div>
+      ) : null}
+
       {result ? (
-        <p role="status" className={cn("text-sm", result.ok ? "text-positive" : "text-destructive")}>
-          {adjustmentResultMessage(result)}
-        </p>
+        <div className="flex flex-col items-start gap-2">
+          <p role="status" className={cn("text-sm", result.ok ? "text-positive" : "text-destructive")}>
+            {adjustmentResultMessage(result, source)}
+          </p>
+          {/* T16 FIX-9: a stale token is the one refusal the person cannot fix
+              by editing the fields — the day or week moved on under them, so
+              the only way forward is a fresh render. Mirrors checkin-card.tsx's
+              own stale control. */}
+          {!result.ok && result.reason === "stale_token" ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => router.refresh()}>
+              Обновить страницу
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

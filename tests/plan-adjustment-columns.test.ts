@@ -55,15 +55,16 @@ describe("T12 — insertPlanAdjustmentTx's insert shape", () => {
       sourceDate: "2026-07-25",
       decision: "keep",
       barrier: "time",
-      note: null,
     };
 
     await insertPlanAdjustmentTx(chain as unknown as Transaction, values);
 
     expect(valuesArgs).toHaveLength(1);
     const passed = valuesArgs[0] as Record<string, unknown>;
+    // T16 FIX-6: `note` is gone from the written set — the column still exists
+    // in the applied migration 0014 but has no producer, so nothing sends it.
     expect(new Set(Object.keys(passed))).toEqual(
-      new Set(["goalId", "checklistItemId", "source", "sourceDate", "decision", "barrier", "note"]),
+      new Set(["goalId", "checklistItemId", "source", "sourceDate", "decision", "barrier"]),
     );
   });
 

@@ -294,7 +294,27 @@ describe("SOFT-DELETE-002: the goal cascade reaches every child it can (probe A1
 
     const deleteIndex = query.indexOf("export async function softDeleteGoal");
     const body = query.slice(deleteIndex, query.indexOf("export", deleteIndex + 10));
-    expect(body).toContain("checkins, woopEntries]");
+
+    // T16 FIX-2: this used to pin the array's tail — `toContain("checkins,
+    // woopEntries]")` — which only held while woopEntries was the newest child.
+    // planAdjustments (drizzle/0014) joined the cascade, so the tail moved. Assert
+    // every member of the loop's array by name instead, scoped to the array text
+    // so a name mentioned elsewhere in the body cannot satisfy it: seven members
+    // asserted where two were, and it no longer goes stale on the next child.
+    const cascadeStart = body.indexOf("for (const child of [");
+    const cascade = body.slice(cascadeStart, body.indexOf("]", cascadeStart) + 1);
+    for (const child of [
+      "contributions",
+      "checklistItems",
+      "comments",
+      "mediaItems",
+      "checkins",
+      "woopEntries",
+      "planAdjustments",
+    ]) {
+      expect(cascade, `${child} missing from softDeleteGoal's cascade`).toContain(child);
+    }
+
     // Comment media carries no goalId, so the loop cannot see it.
     expect(body).toContain("eq(comments.goalId, goalId)");
     expect(body).toContain("eq(comments.id, mediaItems.commentId)");

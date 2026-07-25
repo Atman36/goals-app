@@ -12,6 +12,7 @@ const base = {
   status: "success" as const,
   prevOutcome: "partial" as const,
   prevPromiseGoalId: "goal-1",
+  prevPromiseGoalActive: true,
 };
 
 describe("shouldShowReflectionAdjustment", () => {
@@ -49,5 +50,22 @@ describe("shouldShowReflectionAdjustment", () => {
 
   it("is true on success + skipped + a non-empty goal id", () => {
     expect(shouldShowReflectionAdjustment({ ...base, prevOutcome: "skipped" })).toBe(true);
+  });
+
+  // T16 FIX-3: a goal id alone is not enough — savePlanAdjustment refuses a
+  // goal that is deleted, archived or achieved, so offering the node for one
+  // guarantees "Цель недоступна" after the person has already answered.
+  it("is false when the previous promise's goal is no longer live and active", () => {
+    expect(shouldShowReflectionAdjustment({ ...base, prevPromiseGoalActive: false })).toBe(false);
+  });
+
+  it("is false for an inactive goal even on success + skipped", () => {
+    expect(
+      shouldShowReflectionAdjustment({
+        ...base,
+        prevOutcome: "skipped",
+        prevPromiseGoalActive: false,
+      }),
+    ).toBe(false);
   });
 });

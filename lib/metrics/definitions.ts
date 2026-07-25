@@ -1,7 +1,7 @@
 import { weekStartKey, previousWeekKey } from "@/lib/utils/week-keys";
 import { daysBetweenKeys } from "@/lib/utils/date-keys";
 import type { CheckinOutcome } from "@/lib/validators/checkin";
-import type { PlanAdjustmentDecision, PlanAdjustmentBarrier } from "@/lib/validators/plan-adjustment";
+import type { PlanAdjustmentDecision } from "@/lib/validators/plan-adjustment";
 
 // Pure metrics module for the "Приборы" instrument page (T2). No DB access,
 // no `Date.now()`/`new Date()` — everything that depends on "now" arrives as
@@ -42,11 +42,11 @@ export type MetricChecklistItem = {
   ifThen: { trigger: string; action: string; planType: string } | null;
 };
 
+// T16 FIX-7: narrowed to what planAdjustmentMix actually reads. `sourceDate`,
+// `source` and `barrier` used to travel here unused — the window is applied by
+// the query, and a barrier distribution is deliberately out of scope (T15 D2).
 export type MetricPlanAdjustment = {
-  sourceDate: string;
-  source: "checkin" | "reflection";
   decision: PlanAdjustmentDecision;
-  barrier: PlanAdjustmentBarrier;
 };
 
 // --- Window -----------------------------------------------------------------

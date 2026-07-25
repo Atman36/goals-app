@@ -49,7 +49,10 @@ export const planAdjustmentInputSchema = z
     trigger: z.string().trim().min(1).max(280).optional(),
     copingTrigger: z.string().trim().min(1).max(280).optional(),
     copingAction: z.string().trim().min(1).max(280).optional(),
-    note: z.string().trim().max(2000).optional(),
+    // T16 FIX-6: `note` used to sit here with no producer anywhere — T13 chose
+    // not to ask for one in the card, T14 never added one either. The column
+    // stays in the applied migration 0014 (see lib/db/schema.ts), but the
+    // input surface is gone until something actually writes it.
   })
   .superRefine((data, ctx) => {
     if (data.decision === "smaller") {

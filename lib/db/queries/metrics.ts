@@ -83,11 +83,6 @@ export async function getMetricsData(
     checkins: checkinRows,
     reflections: reflectionRows,
     checklistItems: checklistRows,
-    planAdjustments: planAdjustmentRows.map((row) => ({
-      sourceDate: row.sourceDate,
-      source: row.source,
-      decision: row.decision,
-      barrier: row.barrier,
-    })),
+    planAdjustments: planAdjustmentRows.map((row) => ({ decision: row.decision })),
   };
 }

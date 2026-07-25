@@ -214,13 +214,17 @@ export function CheckinCard({
           {isPending ? "Сохраняем…" : "Сохранить чек-ин"}
         </Button>
 
+        {/* T16 FIX-1: the node is NOT dismissed when it saves. It used to be
+            handed a dismissal callback that unmounted it here in the same
+            commit that set its result, which swallowed both the confirmation
+            and the "duplicate — the step was not changed" message. It now
+            collapses its own pickers and keeps its result on screen. */}
         {showAdjustment ? (
           <PlanAdjustmentStep
             goalId={goalId}
             source="checkin"
             expectedToken={expectedDate}
             steps={steps}
-            onDone={() => setShowAdjustment(false)}
           />
         ) : null}
       </CardContent>

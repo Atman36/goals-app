@@ -254,6 +254,10 @@ export const planAdjustments = pgTable("plan_adjustments", {
   sourceDate: date("source_date").notNull(),
   decision: text("decision", { enum: PLAN_ADJUSTMENT_DECISIONS }).notNull(),
   barrier: text("barrier", { enum: PLAN_ADJUSTMENT_BARRIERS }).notNull(),
+  // Reserved (T16 FIX-6): the column exists in the applied migration 0014 and
+  // stays, but nothing produces a value for it today — no surface asks for a
+  // note, so it is deliberately absent from planAdjustmentInputSchema and from
+  // the action's insert values.
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

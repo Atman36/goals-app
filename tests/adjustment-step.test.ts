@@ -73,7 +73,10 @@ describe("decisionAvailability", () => {
 });
 
 describe("adjustmentResultMessage", () => {
-  const cases: [SavePlanAdjustmentResult, string][] = [
+  // T16 FIX-4: the two time-scoped branches differ by surface — the daily card
+  // refuses a second answer for the same DAY, the weekly node for the same
+  // WEEK — so each surface has to be asserted separately, not just one of them.
+  const checkinCases: [SavePlanAdjustmentResult, string][] = [
     [{ ok: true, duplicate: true, changedStep: false }, "Сегодня уже отмечали — ничего не меняю."],
     [{ ok: true, duplicate: false, changedStep: true }, "Готово. Шаг на завтра поправлен."],
     [{ ok: true, duplicate: false, changedStep: false }, "Записал."],
@@ -84,7 +87,32 @@ describe("adjustmentResultMessage", () => {
     [{ ok: false, reason: "invalid" }, "Проверьте заполненные поля."],
   ];
 
-  it.each(cases)("maps %o to %s", (result, expected) => {
-    expect(adjustmentResultMessage(result)).toBe(expected);
+  const reflectionCases: [SavePlanAdjustmentResult, string][] = [
+    [
+      { ok: true, duplicate: true, changedStep: false },
+      "На этой неделе уже отмечали — ничего не меняю.",
+    ],
+    [{ ok: true, duplicate: false, changedStep: true }, "Готово. Шаг на завтра поправлен."],
+    [{ ok: true, duplicate: false, changedStep: false }, "Записал."],
+    [{ ok: false, reason: "stale_token" }, "Неделя уже сменилась — обновите страницу."],
+    [{ ok: false, reason: "not_found" }, "Цель недоступна."],
+    [{ ok: false, reason: "item_not_found" }, "Шаг не найден — возможно, он изменился."],
+    [{ ok: false, reason: "no_if_then" }, "У этого шага нет «если—то»."],
+    [{ ok: false, reason: "invalid" }, "Проверьте заполненные поля."],
+  ];
+
+  it.each(checkinCases)("maps %o to %s on the check-in surface", (result, expected) => {
+    expect(adjustmentResultMessage(result, "checkin")).toBe(expected);
+  });
+
+  it.each(reflectionCases)("maps %o to %s on the reflection surface", (result, expected) => {
+    expect(adjustmentResultMessage(result, "reflection")).toBe(expected);
+  });
+
+  it("says nothing about a day on the weekly surface", () => {
+    const duplicate: SavePlanAdjustmentResult = { ok: true, duplicate: true, changedStep: false };
+    const stale: SavePlanAdjustmentResult = { ok: false, reason: "stale_token" };
+    expect(adjustmentResultMessage(duplicate, "reflection")).not.toContain("Сегодня");
+    expect(adjustmentResultMessage(stale, "reflection")).not.toContain("День");
   });
 });

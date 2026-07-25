@@ -37,12 +37,12 @@ function checkin(partial: Partial<MetricCheckin> = {}): MetricCheckin {
   };
 }
 
+// T16 FIX-7: MetricPlanAdjustment carries only `decision` now — the sourceDate/
+// source/barrier this fixture used to build were never read by planAdjustmentMix
+// nor asserted by any case below.
 function planAdjustment(partial: Partial<MetricPlanAdjustment> = {}): MetricPlanAdjustment {
   return {
-    sourceDate: "2026-07-06",
-    source: "checkin",
     decision: "keep",
-    barrier: "time",
     ...partial,
   };
 }

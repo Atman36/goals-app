@@ -3,6 +3,7 @@ import {
   ADJUSTMENT_NO_OPEN_STEPS,
 } from "@/lib/plan-adjustment-labels";
 import type { SavePlanAdjustmentResult } from "@/lib/actions/plan-adjustments";
+import type { PlanAdjustmentSource } from "@/lib/validators/plan-adjustment";
 
 // T13 (PLAN §5 B4). Pure logic behind the plan-adjustment step: which open
 // steps a person can pick from, which decisions are available for them, and
@@ -48,16 +49,32 @@ export function decisionAvailability(options: AdjustmentStepOption[]): {
 }
 
 /** What to tell the person after savePlanAdjustment resolves — the ONE source
- *  of this copy, verbatim per the spec. */
-export function adjustmentResultMessage(result: SavePlanAdjustmentResult): string {
+ *  of this copy, verbatim per the spec.
+ *
+ *  T16 FIX-4: two of the branches name a unit of time, and the two surfaces
+ *  measure in different ones — the daily card refuses a second answer for the
+ *  same DAY, the weekly node for the same WEEK. Telling someone "сегодня уже
+ *  отмечали" about a weekly ritual they last touched days ago is simply
+ *  false, so `source` picks the wording. The other six branches say nothing
+ *  about time and are shared. */
+export function adjustmentResultMessage(
+  result: SavePlanAdjustmentResult,
+  source: PlanAdjustmentSource,
+): string {
   if (result.ok) {
-    if (result.duplicate) return "Сегодня уже отмечали — ничего не меняю.";
+    if (result.duplicate) {
+      return source === "reflection"
+        ? "На этой неделе уже отмечали — ничего не меняю."
+        : "Сегодня уже отмечали — ничего не меняю.";
+    }
     if (result.changedStep) return "Готово. Шаг на завтра поправлен.";
     return "Записал.";
   }
   switch (result.reason) {
     case "stale_token":
-      return "День уже сменился — обновите страницу.";
+      return source === "reflection"
+        ? "Неделя уже сменилась — обновите страницу."
+        : "День уже сменился — обновите страницу.";
     case "not_found":
       return "Цель недоступна.";
     case "item_not_found":

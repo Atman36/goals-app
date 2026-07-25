@@ -1,4 +1,8 @@
-import type { PlanAdjustmentBarrier, PlanAdjustmentDecision } from "@/lib/validators/plan-adjustment";
+import type {
+  PlanAdjustmentBarrier,
+  PlanAdjustmentDecision,
+  PlanAdjustmentSource,
+} from "@/lib/validators/plan-adjustment";
 
 // Shared copy for the plan-adjustment step (T13, PLAN §5 B4) — the ONE source
 // of the barrier/decision wording, same pattern as lib/checkin-labels.ts.
@@ -29,7 +33,13 @@ export const DECISION_LABELS: Record<PlanAdjustmentDecision, string> = {
   drop_goal: "Закрыть цель",
 };
 
-export const ADJUSTMENT_BARRIER_HEADING = "Что помешало?";
+// T16 FIX-8: the reflection screen already asks "Что помешало или помогло?"
+// as its third question, so the node repeating "Что помешало?" right below it
+// read as the same question twice. The daily surface keeps the short form.
+export const ADJUSTMENT_BARRIER_HEADING: Record<PlanAdjustmentSource, string> = {
+  checkin: "Что помешало?",
+  reflection: "Что помешало прошлому обещанию?",
+};
 export const ADJUSTMENT_BARRIER_HINT =
   "Одно касание. Это нужно, чтобы поправить шаг, а не чтобы оценить день.";
 export const ADJUSTMENT_DECISION_HEADING = "Что сделаем с шагом на завтра?";

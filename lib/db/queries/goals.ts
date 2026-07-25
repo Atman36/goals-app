@@ -9,6 +9,7 @@ import {
   goalKindEnum,
   goalStatusEnum,
   mediaItems,
+  planAdjustments,
   users,
   woopEntries,
   type Goal,
@@ -268,9 +269,21 @@ export async function softDeleteGoal(userId: string, goalId: string): Promise<st
     if (!row) return null;
 
     // woopEntries joined this list in drizzle/0011, which gave it a deletedAt.
+    // planAdjustments joined it in T16 (FIX-2): drizzle/0014 added it as a new
+    // child of goals with its own deletedAt, but not to this loop, so its rows
+    // stayed live under a deleted goal — the same orphaned-child shape probe
+    // A13 found for comment-attached media below.
     // goal_revisions deliberately stays out: it is append-only history of this
     // goal and must outlive it (SPEC-16 keeps it INSERT-only for the same reason).
-    for (const child of [contributions, checklistItems, comments, mediaItems, checkins, woopEntries]) {
+    for (const child of [
+      contributions,
+      checklistItems,
+      comments,
+      mediaItems,
+      checkins,
+      woopEntries,
+      planAdjustments,
+    ]) {
       await tx
         .update(child)
         .set({ deletedAt: now })

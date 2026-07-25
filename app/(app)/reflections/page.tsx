@@ -50,10 +50,19 @@ export default async function ReflectionsPage({
   // `prevPromise` already reads — null is a legitimate "orphan promise"
   // (Decisions D2), not an error, so the checklist is only fetched when a
   // goal is actually there to attach the plan-adjustment node to.
-  const prevPromiseGoalId = prev?.promiseGoalId ?? null;
-  const prevGoalChecklistItems = prevPromiseGoalId
-    ? await listChecklistItems(user.id, prevPromiseGoalId)
-    : [];
+  //
+  // T16 FIX-3: read the JOINED goal (`promiseGoal`), not the raw foreign key —
+  // the join already drops a deleted or foreign goal — and additionally require
+  // the goal to be active, since savePlanAdjustment refuses anything else.
+  // Membership in the already-loaded `activeGoals` is what separates an active
+  // goal from an achieved/archived one, so this needs no extra query.
+  const prevPromiseGoalId = prev?.promiseGoal?.id ?? null;
+  const prevPromiseGoalActive =
+    prevPromiseGoalId !== null && activeGoals.some((goal) => goal.id === prevPromiseGoalId);
+  const prevGoalChecklistItems =
+    prevPromiseGoalId !== null && prevPromiseGoalActive
+      ? await listChecklistItems(user.id, prevPromiseGoalId)
+      : [];
 
   const subtitle = `${format(parseISO(weekStart), "d MMMM", { locale: ru })} – ${format(weekEnd, "d MMMM yyyy", { locale: ru })}`;
 
@@ -78,7 +87,8 @@ export default async function ReflectionsPage({
         defaultGoalId={defaultGoalId}
         preselectedPrevOutcome={preselectedPrevOutcome}
         prevPromiseGoalId={prevPromiseGoalId}
-        prevGoalSteps={prevPromiseGoalId ? toAdjustmentStepOptions(prevGoalChecklistItems) : []}
+        prevPromiseGoalActive={prevPromiseGoalActive}
+        prevGoalSteps={toAdjustmentStepOptions(prevGoalChecklistItems)}
       />
 
       {history.length > 0 ? (

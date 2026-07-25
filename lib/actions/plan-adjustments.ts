@@ -85,7 +85,6 @@ export async function savePlanAdjustment(input: unknown): Promise<SavePlanAdjust
         sourceDate,
         decision: data.decision,
         barrier: data.barrier,
-        note: data.note ?? null,
       });
       // Decisions D4: a conflicting resubmit changes nothing about the step —
       // otherwise replaying the form would shrink the step twice.

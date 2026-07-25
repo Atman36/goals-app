@@ -14,6 +14,7 @@ import {
   rollingConsistency,
   ifThenCoverage,
   orphanPromises,
+  planAdjustmentMix,
 } from "@/lib/metrics/definitions";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { todayKey } from "@/lib/utils/date-keys";
@@ -66,6 +67,7 @@ export default async function MetricsPage() {
   const consistency = rollingConsistency(activeList, weekStarts);
   const ifThen = ifThenCoverage(data.checklistItems);
   const orphans = orphanPromises(data.reflections);
+  const adjustmentMix = planAdjustmentMix(data.planAdjustments);
 
   const closedByWeek = new Map(cycles.weeks.map((w) => [w.weekStart, w.completed]));
   const coverageByWeek = new Map(coverage.map((c) => [c.weekStart, c]));
@@ -213,6 +215,23 @@ export default async function MetricsPage() {
                 <span className="text-sm font-medium text-foreground">
                   Активность: {consistency.active} из последних {consistency.window} недель
                 </span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {adjustmentMix.total === 0 ? (
+                  <span className="text-sm font-medium text-foreground">Поправок плана за период не было.</span>
+                ) : (
+                  <>
+                    <span className="text-sm font-medium text-foreground">
+                      Поправки плана: {adjustmentMix.total}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      оставить — {adjustmentMix.keep} · меньше — {adjustmentMix.smaller} · триггер —{" "}
+                      {adjustmentMix.change_trigger} · план на случай — {adjustmentMix.add_coping_plan} · пауза —{" "}
+                      {adjustmentMix.pause_goal} · закрыть — {adjustmentMix.drop_goal}
+                    </span>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>

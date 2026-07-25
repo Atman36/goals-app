@@ -1,6 +1,7 @@
 import { weekStartKey, previousWeekKey } from "@/lib/utils/week-keys";
 import { daysBetweenKeys } from "@/lib/utils/date-keys";
 import type { CheckinOutcome } from "@/lib/validators/checkin";
+import type { PlanAdjustmentDecision, PlanAdjustmentBarrier } from "@/lib/validators/plan-adjustment";
 
 // Pure metrics module for the "Приборы" instrument page (T2). No DB access,
 // no `Date.now()`/`new Date()` — everything that depends on "now" arrives as
@@ -39,6 +40,13 @@ export type MetricReflection = {
 export type MetricChecklistItem = {
   goalId: string;
   ifThen: { trigger: string; action: string; planType: string } | null;
+};
+
+export type MetricPlanAdjustment = {
+  sourceDate: string;
+  source: "checkin" | "reflection";
+  decision: PlanAdjustmentDecision;
+  barrier: PlanAdjustmentBarrier;
 };
 
 // --- Window -----------------------------------------------------------------
@@ -214,6 +222,36 @@ export function orphanPromises(reflections: MetricReflection[]): {
   return { orphans, withGoal, totalWithPromise: orphans + withGoal };
 }
 
+// --- Plan adjustments ---------------------------------------------------
+
+/** Distribution of plan-adjustment decisions (T12's "узел сличения") across
+ *  the given records, plus the total (Decision D1 — a bare distribution with
+ *  no total doesn't read on the page, matching checkinOutcomeMix's shape). */
+export function planAdjustmentMix(adjustments: MetricPlanAdjustment[]): {
+  keep: number;
+  smaller: number;
+  change_trigger: number;
+  add_coping_plan: number;
+  pause_goal: number;
+  drop_goal: number;
+  total: number;
+} {
+  const mix = {
+    keep: 0,
+    smaller: 0,
+    change_trigger: 0,
+    add_coping_plan: 0,
+    pause_goal: 0,
+    drop_goal: 0,
+    total: 0,
+  };
+  for (const a of adjustments) {
+    mix[a.decision] += 1;
+    mix.total += 1;
+  }
+  return mix;
+}
+
 // --- Contract with scripts/metrics-snapshot.mjs (task A2) ------------------
 
 /** Closed, flat list of every numeric indicator "Приборы" shows for the
@@ -241,4 +279,11 @@ export const METRIC_KEYS = [
   "promises_total",
   "rolling_consistency_active",
   "rolling_consistency_window",
+  "plan_adjustment_keep",
+  "plan_adjustment_smaller",
+  "plan_adjustment_change_trigger",
+  "plan_adjustment_add_coping_plan",
+  "plan_adjustment_pause_goal",
+  "plan_adjustment_drop_goal",
+  "plan_adjustments_total",
 ] as const;

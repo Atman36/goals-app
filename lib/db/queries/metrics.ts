@@ -1,7 +1,13 @@
 import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { checkins, checklistItems, goals, reflections } from "@/lib/db/schema";
-import type { MetricCheckin, MetricChecklistItem, MetricReflection } from "@/lib/metrics/definitions";
+import { listPlanAdjustmentsForUser } from "@/lib/db/queries/plan-adjustments";
+import type {
+  MetricCheckin,
+  MetricChecklistItem,
+  MetricPlanAdjustment,
+  MetricReflection,
+} from "@/lib/metrics/definitions";
 
 /** Raw rows for the "Приборы" instrument page, scoped to `userId` and
  *  soft-delete filtered per the app's data-access conventions — ownership
@@ -18,7 +24,13 @@ import type { MetricCheckin, MetricChecklistItem, MetricReflection } from "@/lib
  *    against the window's week-start keys instead.
  *  - checklistItems: the user's live steps under live goals, NOT bounded by
  *    the window — if-then coverage is measured over all current steps, not
- *    just ones touched during the window (T2 Step 2 decision). */
+ *    just ones touched during the window (T2 Step 2 decision).
+ *  - planAdjustments (T15): sourced from listPlanAdjustmentsForUser, which
+ *    already centralizes the userId scope and `deletedAt IS NULL` filter
+ *    (AGENTS.md) — no separate hand-rolled select on this table here, since
+ *    that duplication is exactly what let the weekly snapshot once count
+ *    another user's rows (T11). Windowed from the earliest `weekStarts`
+ *    entry, same as checkins; an empty `weekStarts` skips the query. */
 export async function getMetricsData(
   userId: string,
   weekStarts: string[],
@@ -26,10 +38,11 @@ export async function getMetricsData(
   checkins: MetricCheckin[];
   reflections: MetricReflection[];
   checklistItems: MetricChecklistItem[];
+  planAdjustments: MetricPlanAdjustment[];
 }> {
   const windowStart = weekStarts[0];
 
-  const [checkinRows, reflectionRows, checklistRows] = await Promise.all([
+  const [checkinRows, reflectionRows, checklistRows, planAdjustmentRows] = await Promise.all([
     db
       .select({
         goalId: checkins.goalId,
@@ -63,7 +76,18 @@ export async function getMetricsData(
       .from(checklistItems)
       .innerJoin(goals, eq(goals.id, checklistItems.goalId))
       .where(and(isNull(checklistItems.deletedAt), eq(goals.userId, userId), isNull(goals.deletedAt))),
+    weekStarts.length === 0 ? Promise.resolve([]) : listPlanAdjustmentsForUser(userId, windowStart),
   ]);
 
-  return { checkins: checkinRows, reflections: reflectionRows, checklistItems: checklistRows };
+  return {
+    checkins: checkinRows,
+    reflections: reflectionRows,
+    checklistItems: checklistRows,
+    planAdjustments: planAdjustmentRows.map((row) => ({
+      sourceDate: row.sourceDate,
+      source: row.source,
+      decision: row.decision,
+      barrier: row.barrier,
+    })),
+  };
 }

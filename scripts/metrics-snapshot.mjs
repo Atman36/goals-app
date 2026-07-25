@@ -35,8 +35,8 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 
-// --- Contract with lib/metrics/definitions.ts (task T2) --------------------
-// Same 20 keys, same order — tests/metrics-snapshot.test.ts fails the build
+// --- Contract with lib/metrics/definitions.ts (task T2, extended T15) ------
+// Same 27 keys, same order — tests/metrics-snapshot.test.ts fails the build
 // the moment these two lists disagree as sets.
 export const SNAPSHOT_KEYS = [
   "completed_cycles",
@@ -59,6 +59,13 @@ export const SNAPSHOT_KEYS = [
   "promises_total",
   "rolling_consistency_active",
   "rolling_consistency_window",
+  "plan_adjustment_keep",
+  "plan_adjustment_smaller",
+  "plan_adjustment_change_trigger",
+  "plan_adjustment_add_coping_plan",
+  "plan_adjustment_pause_goal",
+  "plan_adjustment_drop_goal",
+  "plan_adjustments_total",
 ];
 
 // The only keys allowed to carry a string value in the frozen object — every
@@ -141,8 +148,9 @@ function isoWeek(mondayKey) {
 const WINDOW_WEEKS = 8;
 // Version of THIS snapshot file's own JSON shape — bump only if the shape
 // (not the numbers) changes, so an old frozen file can be told apart from a
-// new one at restore/read time.
-const SCHEMA_VERSION = "1";
+// new one at restore/read time. Bumped to "2" in T15: added the seven
+// plan_adjustment_* keys.
+const SCHEMA_VERSION = "2";
 
 function fail(message) {
   console.error(`metrics-snapshot: ${message}`);
@@ -306,7 +314,30 @@ async function main() {
           AND ci.deleted_at IS NULL AND g.deleted_at IS NULL
       `;
 
-      return { reflectionRow, checkinRow, activeRow, checklistRow };
+      // Plan adjustments (T15): matches planAdjustmentMix. Same join idiom as
+      // checkinRow above — scoped to this owner's goals via `g.user_id =
+      // ${ownerId}` AND both `plan_adjustments.deleted_at` and
+      // `goals.deleted_at` excluded, windowed by `source_date` the same way
+      // as `c.date` above. This is the exact spot T11 found counting every
+      // user's rows instead of the page's one — the `g.user_id` predicate
+      // below is what a repeat of that bug would be missing.
+      const [planAdjustmentRow] = await tx`
+        SELECT
+          COUNT(*) FILTER (WHERE pa.decision = 'keep')::int AS plan_adjustment_keep,
+          COUNT(*) FILTER (WHERE pa.decision = 'smaller')::int AS plan_adjustment_smaller,
+          COUNT(*) FILTER (WHERE pa.decision = 'change_trigger')::int AS plan_adjustment_change_trigger,
+          COUNT(*) FILTER (WHERE pa.decision = 'add_coping_plan')::int AS plan_adjustment_add_coping_plan,
+          COUNT(*) FILTER (WHERE pa.decision = 'pause_goal')::int AS plan_adjustment_pause_goal,
+          COUNT(*) FILTER (WHERE pa.decision = 'drop_goal')::int AS plan_adjustment_drop_goal,
+          COUNT(*)::int AS plan_adjustments_total
+        FROM plan_adjustments pa
+        JOIN goals g ON g.id = pa.goal_id
+        WHERE g.user_id = ${ownerId}
+          AND pa.deleted_at IS NULL AND g.deleted_at IS NULL
+          AND pa.source_date >= ${windowStart}::date AND pa.source_date < ${windowEnd}::date
+      `;
+
+      return { reflectionRow, checkinRow, activeRow, checklistRow, planAdjustmentRow };
     });
   } catch (error) {
     // Captured rather than re-thrown so the connection still closes below —
@@ -317,7 +348,7 @@ async function main() {
   }
   if (readError) fail(readError instanceof Error ? readError.message : String(readError));
 
-  const { reflectionRow, checkinRow, activeRow, checklistRow } = metrics;
+  const { reflectionRow, checkinRow, activeRow, checklistRow, planAdjustmentRow } = metrics;
 
   const checkinCoverageWindowDays = WINDOW_WEEKS * 7;
   const promisesTotal = reflectionRow.orphan_promises + reflectionRow.promises_with_goal;
@@ -350,6 +381,13 @@ async function main() {
     promises_total: promisesTotal,
     rolling_consistency_active: activeRow.active_weeks,
     rolling_consistency_window: WINDOW_WEEKS,
+    plan_adjustment_keep: planAdjustmentRow.plan_adjustment_keep,
+    plan_adjustment_smaller: planAdjustmentRow.plan_adjustment_smaller,
+    plan_adjustment_change_trigger: planAdjustmentRow.plan_adjustment_change_trigger,
+    plan_adjustment_add_coping_plan: planAdjustmentRow.plan_adjustment_add_coping_plan,
+    plan_adjustment_pause_goal: planAdjustmentRow.plan_adjustment_pause_goal,
+    plan_adjustment_drop_goal: planAdjustmentRow.plan_adjustment_drop_goal,
+    plan_adjustments_total: planAdjustmentRow.plan_adjustments_total,
   };
 
   // Runtime guard, not just review (T3 Decision 5): must not write a single

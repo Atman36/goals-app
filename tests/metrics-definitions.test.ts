@@ -7,9 +7,11 @@ import {
   feelingByOutcome,
   orphanPromises,
   ifThenCoverage,
+  planAdjustmentMix,
   type MetricCheckin,
   type MetricReflection,
   type MetricChecklistItem,
+  type MetricPlanAdjustment,
 } from "@/lib/metrics/definitions";
 import { weekStartKey } from "@/lib/utils/week-keys";
 
@@ -31,6 +33,16 @@ function checkin(partial: Partial<MetricCheckin> = {}): MetricCheckin {
     outcome: "done",
     feeling: 3,
     note: null,
+    ...partial,
+  };
+}
+
+function planAdjustment(partial: Partial<MetricPlanAdjustment> = {}): MetricPlanAdjustment {
+  return {
+    sourceDate: "2026-07-06",
+    source: "checkin",
+    decision: "keep",
+    barrier: "time",
     ...partial,
   };
 }
@@ -133,6 +145,66 @@ describe("ifThenCoverage", () => {
     expect(result.structured).toBe(1);
     expect(result.total).toBe(2);
     expect(result.ratio).toBe(0.5);
+  });
+});
+
+describe("planAdjustmentMix", () => {
+  it("returns all six counters and total at zero for an empty array", () => {
+    const result = planAdjustmentMix([]);
+    expect(result).toEqual({
+      keep: 0,
+      smaller: 0,
+      change_trigger: 0,
+      add_coping_plan: 0,
+      pause_goal: 0,
+      drop_goal: 0,
+      total: 0,
+    });
+  });
+
+  it("counts one record of each decision as 1 each, total 6", () => {
+    const result = planAdjustmentMix([
+      planAdjustment({ decision: "keep" }),
+      planAdjustment({ decision: "smaller" }),
+      planAdjustment({ decision: "change_trigger" }),
+      planAdjustment({ decision: "add_coping_plan" }),
+      planAdjustment({ decision: "pause_goal" }),
+      planAdjustment({ decision: "drop_goal" }),
+    ]);
+    expect(result).toEqual({
+      keep: 1,
+      smaller: 1,
+      change_trigger: 1,
+      add_coping_plan: 1,
+      pause_goal: 1,
+      drop_goal: 1,
+      total: 6,
+    });
+  });
+
+  it("counts three 'smaller' and one 'keep' record, rest at zero, total 4", () => {
+    const result = planAdjustmentMix([
+      planAdjustment({ decision: "smaller" }),
+      planAdjustment({ decision: "smaller" }),
+      planAdjustment({ decision: "smaller" }),
+      planAdjustment({ decision: "keep" }),
+    ]);
+    expect(result).toEqual({
+      keep: 1,
+      smaller: 3,
+      change_trigger: 0,
+      add_coping_plan: 0,
+      pause_goal: 0,
+      drop_goal: 0,
+      total: 4,
+    });
+  });
+
+  it("returns exactly the seven expected keys, no more", () => {
+    const result = planAdjustmentMix([]);
+    expect(Object.keys(result).sort()).toEqual(
+      ["add_coping_plan", "change_trigger", "drop_goal", "keep", "pause_goal", "smaller", "total"].sort(),
+    );
   });
 });
 

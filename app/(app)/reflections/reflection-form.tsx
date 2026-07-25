@@ -8,6 +8,9 @@ import type { ReflectionWithPromiseGoal } from "@/lib/db/queries/reflections";
 import { checklistQueryKey } from "@/components/goals/checklist-block";
 import type { IfThenPlan } from "@/lib/validators/checklist";
 import { PLAN_TYPE_LABELS } from "@/lib/plan-type-labels";
+import { PlanAdjustmentStep } from "@/components/goals/plan-adjustment-step";
+import type { AdjustmentStepOption } from "@/lib/utils/adjustment-step";
+import { shouldShowReflectionAdjustment } from "@/lib/utils/reflection-adjustment";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +86,8 @@ export function ReflectionForm({
   activeGoals,
   defaultGoalId,
   preselectedPrevOutcome = null,
+  prevPromiseGoalId = null,
+  prevGoalSteps = [],
 }: {
   current: ReflectionWithPromiseGoal | null;
   prevPromise: string | null;
@@ -102,10 +107,27 @@ export function ReflectionForm({
    *  a radio — an already-saved outcome on this week's row still wins, and
    *  nothing is written until the form is submitted. */
   preselectedPrevOutcome?: "done" | "partial" | "skipped" | null;
+  /** T14: the previous promise's goal, or null for an orphan promise
+   *  (Decisions D2) — gates the plan-adjustment node below. */
+  prevPromiseGoalId?: string | null;
+  /** T14: that goal's open checklist steps, for the same node. Empty when
+   *  there is no previous-promise goal. */
+  prevGoalSteps?: AdjustmentStepOption[];
 }) {
   const [state, formAction, isPending] = useActionState(saveReflection, initialState);
 
   const checkedPrevOutcome = current?.prevOutcome ?? preselectedPrevOutcome;
+
+  // T14 (PLAN §5 B4, Decisions D4): the radios stay uncontrolled/native — this
+  // only OBSERVES which one is picked, so the plan-adjustment node below can
+  // know what the person chose once the save succeeds. Deliberately seeded
+  // from `preselectedPrevOutcome`, NOT from `current?.prevOutcome`: a bare
+  // resubmit of an already-recorded week must not re-show the node just
+  // because the radio still reads checked (D1 — the node answers an honest
+  // CHOICE made in this session, not a value that happened to persist).
+  const [selectedPrevOutcome, setSelectedPrevOutcome] = useState<
+    "done" | "partial" | "skipped" | null
+  >(preselectedPrevOutcome ?? null);
 
   // T9 (PLAN §6 C2): celebrate the CLOSED CYCLE, not the act of logging. The
   // action reports `cycleClosed` only on the "no outcome" → "outcome"
@@ -175,6 +197,7 @@ export function ReflectionForm({
                       name="prevOutcome"
                       value={opt.value}
                       defaultChecked={checkedPrevOutcome === opt.value}
+                      onChange={() => setSelectedPrevOutcome(opt.value)}
                       className="sr-only"
                     />
                     {opt.label}
@@ -314,6 +337,24 @@ export function ReflectionForm({
             {isPending ? "Сохраняем…" : "Сохранить рефлексию"}
           </Button>
         </form>
+
+        {/* T14 (PLAN §5 B4): the same plan-adjustment node as the check-in
+            card, for the PREVIOUS promise's goal — shown only after this
+            reflection saved successfully naming that promise "partial" or
+            "skipped" (Decisions D1/D2/D3, lib/utils/reflection-adjustment.ts). */}
+        {prevPromiseGoalId &&
+        shouldShowReflectionAdjustment({
+          status: state.status,
+          prevOutcome: selectedPrevOutcome,
+          prevPromiseGoalId,
+        }) ? (
+          <PlanAdjustmentStep
+            goalId={prevPromiseGoalId}
+            source="reflection"
+            expectedToken={expectedWeekStart}
+            steps={prevGoalSteps}
+          />
+        ) : null}
       </CardContent>
     </Card>
     </>

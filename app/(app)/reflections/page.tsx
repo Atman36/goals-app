@@ -3,6 +3,7 @@ import { ru } from "date-fns/locale";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getFocusGoal } from "@/lib/db/queries/agenda";
+import { listChecklistItems } from "@/lib/db/queries/checklist";
 import { listGoals } from "@/lib/db/queries/goals";
 import {
   countCompletedCycles,
@@ -13,6 +14,7 @@ import {
 import { todayKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { parsePrevOutcomeParam, WEEK_OUTCOME_LABELS } from "@/lib/utils/promise-card";
+import { toAdjustmentStepOptions } from "@/lib/utils/adjustment-step";
 import { Badge } from "@/components/ui/badge";
 import { ReflectionForm } from "@/app/(app)/reflections/reflection-form";
 
@@ -44,6 +46,15 @@ export default async function ReflectionsPage({
   // in the app's own default ordering (listGoals' default sort — deadline).
   const defaultGoalId = focusGoal?.id ?? activeGoals[0]?.id ?? null;
 
+  // T14 (PLAN §5 B4): the previous promise's goal, from the SAME object
+  // `prevPromise` already reads — null is a legitimate "orphan promise"
+  // (Decisions D2), not an error, so the checklist is only fetched when a
+  // goal is actually there to attach the plan-adjustment node to.
+  const prevPromiseGoalId = prev?.promiseGoalId ?? null;
+  const prevGoalChecklistItems = prevPromiseGoalId
+    ? await listChecklistItems(user.id, prevPromiseGoalId)
+    : [];
+
   const subtitle = `${format(parseISO(weekStart), "d MMMM", { locale: ru })} – ${format(weekEnd, "d MMMM yyyy", { locale: ru })}`;
 
   return (
@@ -66,6 +77,8 @@ export default async function ReflectionsPage({
         activeGoals={activeGoals.map((goal) => ({ id: goal.id, title: goal.title }))}
         defaultGoalId={defaultGoalId}
         preselectedPrevOutcome={preselectedPrevOutcome}
+        prevPromiseGoalId={prevPromiseGoalId}
+        prevGoalSteps={prevPromiseGoalId ? toAdjustmentStepOptions(prevGoalChecklistItems) : []}
       />
 
       {history.length > 0 ? (

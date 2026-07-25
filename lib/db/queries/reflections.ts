@@ -115,6 +115,7 @@ export async function upsertReflection(
         prevOutcome: fields.prevOutcome ?? null,
         newIfThen: fields.newIfThen ?? null,
         promiseGoalId: fields.promiseGoalId ?? null,
+        ifThenItemId: fields.ifThenItemId ?? null,
       },
     })
     .returning();

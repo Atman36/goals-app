@@ -219,8 +219,26 @@ async function main() {
   const sql = postgres(connectionString, { max: 1, prepare: false });
 
   let metrics;
+  let readError = null;
   try {
     metrics = await sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
+      // T11 review: every read on the live page goes through
+      // lib/db/queries/metrics.ts, which scopes by userId. This script had no
+      // user filter at all, so the two would silently diverge the moment a
+      // second row appeared in `users` — and Supabase sign-ups are still open
+      // (owner task E1). The app is single-user by construction
+      // (getCurrentUser always returns the owner), so the honest fix is to
+      // scope by that one user and refuse to guess if there is ever more than
+      // one: a snapshot mixing two people's weeks is worse than no snapshot.
+      const owners = await tx`SELECT id FROM users`;
+      if (owners.length !== 1) {
+        throw new Error(
+          `ожидался ровно один пользователь в таблице users, найдено ${owners.length} — ` +
+            `срез не может выбрать владельца и остановлен`,
+        );
+      }
+      const ownerId = owners[0].id;
+
       // Reflections: matches lib/metrics/definitions.ts's completedCycles /
       // promiseOutcomeMix / orphanPromises. No deleted_at column on this
       // table (schema.ts) — nothing to filter there.
@@ -235,7 +253,8 @@ async function main() {
           COUNT(*) FILTER (WHERE promise IS NOT NULL AND promise <> '' AND promise_goal_id IS NULL)::int AS orphan_promises,
           COUNT(*) FILTER (WHERE promise IS NOT NULL AND promise <> '' AND promise_goal_id IS NOT NULL)::int AS promises_with_goal
         FROM reflections
-        WHERE week_start >= ${windowStart}::date AND week_start < ${windowEnd}::date
+        WHERE user_id = ${ownerId}
+          AND week_start >= ${windowStart}::date AND week_start < ${windowEnd}::date
       `;
 
       // Check-ins: matches checkinCoverage (distinct dates) and
@@ -250,7 +269,8 @@ async function main() {
           COALESCE(AVG(c.feeling) FILTER (WHERE c.outcome = 'skipped'), 0)::float8 AS feeling_avg_skipped
         FROM checkins c
         JOIN goals g ON g.id = c.goal_id
-        WHERE c.deleted_at IS NULL AND g.deleted_at IS NULL
+        WHERE g.user_id = ${ownerId}
+          AND c.deleted_at IS NULL AND g.deleted_at IS NULL
           AND c.date >= ${windowStart}::date AND c.date < ${windowEnd}::date
       `;
 
@@ -262,12 +282,14 @@ async function main() {
           SELECT date_trunc('week', c.date)::date AS week_start
           FROM checkins c
           JOIN goals g ON g.id = c.goal_id
-          WHERE c.deleted_at IS NULL AND g.deleted_at IS NULL
+          WHERE g.user_id = ${ownerId}
+            AND c.deleted_at IS NULL AND g.deleted_at IS NULL
             AND c.date >= ${windowStart}::date AND c.date < ${windowEnd}::date
           UNION
           SELECT r.week_start
           FROM reflections r
-          WHERE r.week_start >= ${windowStart}::date AND r.week_start < ${windowEnd}::date
+          WHERE r.user_id = ${ownerId}
+            AND r.week_start >= ${windowStart}::date AND r.week_start < ${windowEnd}::date
         ) active
       `;
 
@@ -280,14 +302,20 @@ async function main() {
           COUNT(*) FILTER (WHERE ci.if_then IS NOT NULL)::int AS if_then_structured
         FROM checklist_items ci
         JOIN goals g ON g.id = ci.goal_id
-        WHERE ci.deleted_at IS NULL AND g.deleted_at IS NULL
+        WHERE g.user_id = ${ownerId}
+          AND ci.deleted_at IS NULL AND g.deleted_at IS NULL
       `;
 
       return { reflectionRow, checkinRow, activeRow, checklistRow };
     });
+  } catch (error) {
+    // Captured rather than re-thrown so the connection still closes below —
+    // process.exit() inside a catch skips the finally block.
+    readError = error;
   } finally {
     await sql.end({ timeout: 5 });
   }
+  if (readError) fail(readError instanceof Error ? readError.message : String(readError));
 
   const { reflectionRow, checkinRow, activeRow, checklistRow } = metrics;
 

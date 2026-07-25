@@ -215,6 +215,11 @@ export const reflections = pgTable(
     learned: text("learned"),
     promise: text("promise"),
     prevOutcome: checkinOutcomeEnum("prev_outcome"),
+    // Added by drizzle/0013: optional links so a promise can name the goal it
+    // moves and an if-then can name the checklist item it became. Nullable,
+    // no ON DELETE — goals/checklistItems are soft-delete only.
+    promiseGoalId: uuid("promise_goal_id").references(() => goals.id),
+    ifThenItemId: uuid("if_then_item_id").references(() => checklistItems.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("reflections_user_week_unique").on(table.userId, table.weekStart)],

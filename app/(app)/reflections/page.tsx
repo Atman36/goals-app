@@ -12,21 +12,24 @@ import {
 } from "@/lib/db/queries/reflections";
 import { todayKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
+import { parsePrevOutcomeParam, WEEK_OUTCOME_LABELS } from "@/lib/utils/promise-card";
 import { Badge } from "@/components/ui/badge";
 import { ReflectionForm } from "@/app/(app)/reflections/reflection-form";
 
 // Reuses check-in wording, except "не в этот раз" replaces "не сегодня" — a
-// promise's fate over a week, not a single day (Decisions).
-const PREV_OUTCOME_LABELS: Record<string, string> = {
-  done: "Сделал",
-  partial: "Частично",
-  skipped: "Не в этот раз",
-};
+// promise's fate over a week, not a single day (Decisions). The strings
+// themselves live in lib/utils/promise-card.ts, shared with /today's card.
+const PREV_OUTCOME_LABELS: Record<string, string> = WEEK_OUTCOME_LABELS;
 
-export default async function ReflectionsPage() {
+export default async function ReflectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ prevOutcome?: string | string[] }>;
+}) {
   const user = await getCurrentUser();
   const weekStart = weekStartKey(todayKey());
   const weekEnd = addDays(parseISO(weekStart), 6);
+  const preselectedPrevOutcome = parsePrevOutcomeParam((await searchParams).prevOutcome);
 
   const [current, prev, history, cycles, activeGoals, focusGoal] = await Promise.all([
     getReflectionByWeek(user.id, weekStart),
@@ -62,6 +65,7 @@ export default async function ReflectionsPage() {
         expectedWeekStart={weekStart}
         activeGoals={activeGoals.map((goal) => ({ id: goal.id, title: goal.title }))}
         defaultGoalId={defaultGoalId}
+        preselectedPrevOutcome={preselectedPrevOutcome}
       />
 
       {history.length > 0 ? (

@@ -11,13 +11,17 @@ import {
 } from "@/lib/db/queries/agenda";
 import { getGlobalStreak } from "@/lib/db/queries/streaks";
 import { getCheckinForGoalOnDate } from "@/lib/db/queries/checkins";
+import { getLatestReflectionBefore, getReflectionByWeek } from "@/lib/db/queries/reflections";
 import { todayKey } from "@/lib/utils/date-keys";
+import { weekStartKey } from "@/lib/utils/week-keys";
+import { promiseCardState } from "@/lib/utils/promise-card";
 import { classifyDue, formatDueLabelRu, type DueBucket } from "@/lib/utils/reminders";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/goals/empty-state";
 import { GoalCard } from "@/components/goals/goal-card";
 import { CheckinCard } from "@/components/goals/checkin-card";
 import { StreakBadge } from "@/components/goals/streak-badge";
+import { WeeklyPromiseCard } from "@/components/goals/weekly-promise-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -90,17 +94,45 @@ function DeadlineRow({ goal, today }: { goal: GoalDeadline; today: string }) {
 export default async function TodayPage() {
   const user = await getCurrentUser();
   const today = todayKey();
+  const weekStart = weekStartKey(today);
 
-  const [focusGoal, steps, deadlines, streak] = await Promise.all([
-    getFocusGoal(user.id),
-    listOverdueAndUpcomingSteps(user.id, 7),
-    listGoalsByDeadline(user.id, 14),
-    getGlobalStreak(user.id),
-  ]);
+  const [focusGoal, steps, deadlines, streak, currentReflection, previousReflection] =
+    await Promise.all([
+      getFocusGoal(user.id),
+      listOverdueAndUpcomingSteps(user.id, 7),
+      listGoalsByDeadline(user.id, 14),
+      getGlobalStreak(user.id),
+      getReflectionByWeek(user.id, weekStart),
+      getLatestReflectionBefore(user.id, weekStart),
+    ]);
   const checkin = focusGoal ? await getCheckinForGoalOnDate(user.id, focusGoal.id, today) : null;
 
   const stepGroups = groupSteps(steps, today);
   const deadlineGroups = groupDeadlines(deadlines, today);
+
+  // T6 (PLAN §5 B2): the weekly promise lives here every day, not only on
+  // /reflections. `unclosed-previous` is rendered above everything — including
+  // above the empty state, because the invitation to close a cycle must not
+  // disappear exactly when the person is least engaged (Decisions #6).
+  const promiseStates = promiseCardState({
+    currentWeek: currentReflection
+      ? {
+          promise: currentReflection.promise,
+          prevOutcome: currentReflection.prevOutcome,
+          goal: currentReflection.promiseGoal,
+        }
+      : null,
+    previousWeek: previousReflection
+      ? {
+          promise: previousReflection.promise,
+          goal: previousReflection.promiseGoal,
+          weekStart: previousReflection.weekStart,
+        }
+      : null,
+    todayKey: today,
+  });
+  const unclosedPrevious = promiseStates.filter((s) => s.kind === "unclosed-previous");
+  const currentPromise = promiseStates.filter((s) => s.kind !== "unclosed-previous");
 
   const isEmpty = !focusGoal && steps.length === 0 && deadlines.length === 0;
 
@@ -111,6 +143,16 @@ export default async function TodayPage() {
         <p className="text-sm text-muted-foreground">Что сделать сегодня по всем активным целям</p>
         <StreakBadge weeks={streak} className="mt-2 self-start" />
       </div>
+
+      {/* Both blocks sit outside the isEmpty branch: a promise can exist while
+          the day itself is empty (its goal may have no deadline and not be the
+          focus goal), and that is precisely the day it must not vanish. */}
+      {unclosedPrevious.map((state, i) => (
+        <WeeklyPromiseCard key={`unclosed-${i}`} state={state} />
+      ))}
+      {currentPromise.map((state, i) => (
+        <WeeklyPromiseCard key={`promise-${i}`} state={state} />
+      ))}
 
       {isEmpty ? (
         <EmptyState title="На сегодня всё чисто ✨" description="Активных дел по целям нет." actionHref="/" actionLabel="К целям" />

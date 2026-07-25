@@ -81,6 +81,7 @@ export function ReflectionForm({
   expectedWeekStart,
   activeGoals,
   defaultGoalId,
+  preselectedPrevOutcome = null,
 }: {
   current: ReflectionWithPromiseGoal | null;
   prevPromise: string | null;
@@ -95,8 +96,15 @@ export function ReflectionForm({
   /** Decisions D6: the focus goal if one is set, else the first active goal in
    *  the app's own ordering. Null only when there are no active goals. */
   defaultGoalId: string | null;
+  /** T6: the outcome chosen on /today's "close the cycle" buttons, arriving as
+   *  a ?prevOutcome= parameter the page already validated. It only preselects
+   *  a radio — an already-saved outcome on this week's row still wins, and
+   *  nothing is written until the form is submitted. */
+  preselectedPrevOutcome?: "done" | "partial" | "skipped" | null;
 }) {
   const [state, formAction, isPending] = useActionState(saveReflection, initialState);
+
+  const checkedPrevOutcome = current?.prevOutcome ?? preselectedPrevOutcome;
 
   // Decisions D5: a soft-deleted promiseGoal reads back as promiseGoalId set
   // but promiseGoal null — the select must not silently default to a
@@ -155,7 +163,7 @@ export function ReflectionForm({
                       type="radio"
                       name="prevOutcome"
                       value={opt.value}
-                      defaultChecked={current?.prevOutcome === opt.value}
+                      defaultChecked={checkedPrevOutcome === opt.value}
                       className="sr-only"
                     />
                     {opt.label}

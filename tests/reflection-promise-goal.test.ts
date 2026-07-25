@@ -20,6 +20,10 @@ vi.mock("@/lib/db/queries/parent-lock", () => ({
 
 vi.mock("@/lib/db/queries/reflections", () => ({
   getLatestReflectionBefore: vi.fn(async () => null),
+  // T5: saveReflection now also reads this week's own row (inside the same
+  // "has a goal" branch these tests exercise) to know the if-then step's
+  // current id — see tests/reflection-if-then-step.test.ts for that behavior.
+  getReflectionByWeek: vi.fn(async () => null),
   upsertReflection: vi.fn(),
 }));
 

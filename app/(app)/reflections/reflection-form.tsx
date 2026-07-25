@@ -1,8 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { saveReflection, type ReflectionState } from "@/lib/actions/reflections";
 import type { ReflectionWithPromiseGoal } from "@/lib/db/queries/reflections";
+import { checklistQueryKey } from "@/components/goals/checklist-block";
+import type { IfThenPlan } from "@/lib/validators/checklist";
+import { PLAN_TYPE_LABELS } from "@/lib/plan-type-labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +57,20 @@ const selectClassName = cn(
 
 const initialState: ReflectionState = { status: "idle" };
 
+const PLAN_TYPE_OPTIONS = Object.entries(PLAN_TYPE_LABELS) as [IfThenPlan["planType"], string][];
+
+/** Minimal shape read from the existing checklist GET endpoint — reused as-is
+ *  (Boundaries: the route itself isn't touched) purely to find this week's
+ *  live if-then step so the three T5 controls can prefill from it. */
+async function fetchGoalChecklistForPrefill(
+  goalId: string,
+): Promise<{ id: string; ifThen: IfThenPlan | null }[]> {
+  const res = await fetch(`/api/v1/goals/${goalId}/checklist`);
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data: { id: string; ifThen: IfThenPlan | null }[] };
+  return json.data;
+}
+
 /** /reflections's form (Stage0-3, growth-reactor v5 §6/§11/§12): mirrors
  *  settings-form.tsx's useActionState + native-form contract. Renders the
  *  previous week's promise (with its outcome radios) when one exists, the 5
@@ -70,7 +88,9 @@ export function ReflectionForm({
    *  can refuse a submit that crossed the week boundary (CR-030). */
   expectedWeekStart: string;
   /** The user's active goals, fetched by the page (app/(app)/reflections/page.tsx)
-   *  via the existing goals query — this component makes no DB calls of its own. */
+   *  via the existing goals query. The page itself makes no DB call for the
+   *  if-then step's own values — this component fetches those client-side
+   *  from the existing checklist endpoint (see fetchGoalChecklistForPrefill). */
   activeGoals: { id: string; title: string }[];
   /** Decisions D6: the focus goal if one is set, else the first active goal in
    *  the app's own ordering. Null only when there are no active goals. */
@@ -87,6 +107,20 @@ export function ReflectionForm({
     : current?.promiseGoalId
       ? ""
       : (defaultGoalId ?? "");
+
+  // T5: prefill the if-then controls from this week's live step, if any.
+  // `current.promiseGoal` (not the <select>'s live edits) is the goal this
+  // step actually lives under — a soft-deleted/foreign goal (Decisions D5,
+  // above) means there is nothing live to prefill from either.
+  const liveIfThenGoalId = current?.promiseGoal?.id ?? null;
+  const liveIfThenItemId = current?.ifThenItemId ?? null;
+  const { data: goalChecklist } = useQuery({
+    queryKey: checklistQueryKey(liveIfThenGoalId ?? "none"),
+    queryFn: () => fetchGoalChecklistForPrefill(liveIfThenGoalId as string),
+    enabled: !!liveIfThenGoalId && !!liveIfThenItemId,
+  });
+  const liveIfThenItem =
+    goalChecklist?.find((item) => item.id === liveIfThenItemId && item.ifThen) ?? null;
 
   // "promised" is prefilled from last week's promise only on a fresh (never
   // saved) week — once this week's row exists, its own saved value wins
@@ -179,15 +213,58 @@ export function ReflectionForm({
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="newIfThen">Новый шаг «если — то» (необязательно)</Label>
-            <Input
-              id="newIfThen"
-              name="newIfThen"
-              placeholder="Если [ситуация] — то [действие]"
-              defaultValue={current?.newIfThen ?? ""}
-              maxLength={2000}
-            />
+          {/* T5: structural if-then step, always attached to the promise's
+              goal (Decisions #1) — disabled with an explanation when there is
+              no goal to attach it to. Keyed on the live item's id so a fresh
+              defaultValue applies once the prefill fetch resolves (uncontrolled
+              inputs otherwise ignore a defaultValue change after mount). */}
+          <div className="flex flex-col gap-2 rounded-2xl border border-input p-3">
+            <p className="text-sm font-medium">Новый шаг «если — то» (необязательно)</p>
+            {activeGoals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Шаг «если—то» привязывается к цели обещания
+              </p>
+            ) : null}
+            <div key={liveIfThenItem?.id ?? "empty"} className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ifThenTrigger">Если</Label>
+                <Input
+                  id="ifThenTrigger"
+                  name="ifThenTrigger"
+                  placeholder="ситуация"
+                  defaultValue={liveIfThenItem?.ifThen?.trigger ?? ""}
+                  maxLength={280}
+                  disabled={activeGoals.length === 0}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ifThenAction">То</Label>
+                <Input
+                  id="ifThenAction"
+                  name="ifThenAction"
+                  placeholder="действие"
+                  defaultValue={liveIfThenItem?.ifThen?.action ?? ""}
+                  maxLength={280}
+                  disabled={activeGoals.length === 0}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ifThenPlanType">Тип плана</Label>
+                <select
+                  id="ifThenPlanType"
+                  name="ifThenPlanType"
+                  defaultValue={liveIfThenItem?.ifThen?.planType ?? "initiation"}
+                  disabled={activeGoals.length === 0}
+                  className={selectClassName}
+                >
+                  {PLAN_TYPE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {state.status === "error" ? <p className="text-sm text-destructive">{state.message}</p> : null}

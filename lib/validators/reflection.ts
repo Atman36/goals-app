@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { checkinOutcomeValues } from "@/lib/validators/checkin";
+import { ifThenPlanSchema } from "@/lib/validators/checklist";
 import { todayKey, type DateKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 
@@ -53,7 +54,32 @@ export const reflectionInputSchema = z.object({
     .optional()
     .transform((v) => (v === "" ? undefined : v))
     .pipe(z.uuid().optional()),
-});
+  // T5: the structured if-then step, always attached to the promise's goal
+  // (Decisions #1). Bounds mirror ifThenPlanSchema (lib/validators/checklist.ts)
+  // — trigger/action length; planType's enum is imported from there directly
+  // so its values have one source of truth. The free-text `newIfThen` above
+  // is left as-is: the action now derives it from these two fields instead of
+  // reading it from the form (Decisions #2).
+  ifThenTrigger: z
+    .string()
+    .trim()
+    .max(280)
+    .optional()
+    .transform((v) => (v === "" ? undefined : v)),
+  ifThenAction: z
+    .string()
+    .trim()
+    .max(280)
+    .optional()
+    .transform((v) => (v === "" ? undefined : v)),
+  ifThenPlanType: ifThenPlanSchema.shape.planType.optional(),
+})
+  // T5 Steps §1: trigger and action are filled together or not at all — one
+  // without the other can't become a step nor unambiguously clear one.
+  .refine((data) => !!data.ifThenTrigger === !!data.ifThenAction, {
+    message: "Заполните и условие, и действие",
+    path: ["ifThenTrigger"],
+  });
 
 export type ReflectionInput = z.infer<typeof reflectionInputSchema>;
 

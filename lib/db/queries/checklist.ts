@@ -1,6 +1,6 @@
 import { and, asc, eq, exists, getTableColumns, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
+import { withLockedLiveGoal, type Transaction } from "@/lib/db/queries/parent-lock";
 import { checklistItems, goals, type ChecklistItem } from "@/lib/db/schema";
 
 type NewChecklistItem = typeof checklistItems.$inferInsert;
@@ -99,6 +99,66 @@ export async function softDeleteChecklistItem(
     .set({ deletedAt: new Date() })
     .where(
       and(eq(checklistItems.id, itemId), isNull(checklistItems.deletedAt), ownedByUser(userId)),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// --- Writes for a caller that already holds the goal lock ------------------
+// T5 (reflections' if-then step): lib/actions/reflections.ts opens its own
+// withLockedLiveGoal and must do the checklist-item write in that SAME
+// transaction, not a second one — insertChecklistItem above always opens its
+// own lock, which would be a second lock on the same goal in one transaction
+// (unnecessary at best, a deadlock risk if it were ever a different goal).
+// These accept the caller's `tx` directly instead. Scope stays inside each
+// query: goalId + deletedAt IS NULL, same as the rest of this module.
+
+/** Inserts under the caller's transaction. No lock, no ownership check — the
+ *  caller already proved liveness and ownership of `values.goalId` by getting
+ *  a `tx` in the first place (withLockedLiveGoal's contract). */
+export async function insertChecklistItemTx(
+  tx: Transaction,
+  values: NewChecklistItem,
+): Promise<ChecklistItem> {
+  const [inserted] = await tx.insert(checklistItems).values(values).returning();
+  if (!inserted) throw new Error("insertChecklistItemTx: insert returned no row");
+  return inserted;
+}
+
+export async function updateChecklistItemTx(
+  tx: Transaction,
+  goalId: string,
+  itemId: string,
+  values: Partial<Pick<NewChecklistItem, "title" | "note" | "dueDate" | "ifThen">>,
+): Promise<ChecklistItem | null> {
+  const [row] = await tx
+    .update(checklistItems)
+    .set(values)
+    .where(
+      and(
+        eq(checklistItems.id, itemId),
+        eq(checklistItems.goalId, goalId),
+        isNull(checklistItems.deletedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+export async function softDeleteChecklistItemTx(
+  tx: Transaction,
+  goalId: string,
+  itemId: string,
+): Promise<ChecklistItem | null> {
+  const [row] = await tx
+    .update(checklistItems)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(checklistItems.id, itemId),
+        eq(checklistItems.goalId, goalId),
+        isNull(checklistItems.deletedAt),
+      ),
     )
     .returning();
   return row ?? null;

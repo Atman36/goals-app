@@ -14,6 +14,11 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { GOAL_SPHERES } from "@/lib/spheres";
+import {
+  PLAN_ADJUSTMENT_SOURCES,
+  PLAN_ADJUSTMENT_DECISIONS,
+  PLAN_ADJUSTMENT_BARRIERS,
+} from "@/lib/validators/plan-adjustment";
 
 // --- Enums ---------------------------------------------------------------
 
@@ -225,6 +230,35 @@ export const reflections = pgTable(
   (table) => [uniqueIndex("reflections_user_week_unique").on(table.userId, table.weekStart)],
 );
 
+// The plan-adjustment "узел сличения" (T12, PLAN §5 B4, growth-reactor v5):
+// after an honest "partial"/"skipped" check-in or reflection, records what
+// blocked the person and what they chose to do about it. Goal-child table (no
+// user_id; ownership via goals.user_id, same convention as checkins/
+// contributions). `source`+`sourceDate` name the day (checkin) or week-start
+// (reflection) the record answers for; the partial unique index in
+// drizzle/0014_plan_adjustments.sql — (goal_id, source, source_date) WHERE
+// deleted_at IS NULL — makes a resubmit idempotent instead of double-applying
+// the decision (see lib/db/queries/plan-adjustments.ts). `decision`/`barrier`
+// values are DB-level `text` + `CHECK`, not a pgEnum (Decisions D2) — the
+// TypeScript union comes from lib/validators/plan-adjustment.ts, the single
+// source of truth for both.
+export const planAdjustments = pgTable("plan_adjustments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  goalId: uuid("goal_id")
+    .notNull()
+    .references(() => goals.id, { onDelete: "cascade" }),
+  checklistItemId: uuid("checklist_item_id").references(() => checklistItems.id, {
+    onDelete: "set null",
+  }),
+  source: text("source", { enum: PLAN_ADJUSTMENT_SOURCES }).notNull(),
+  sourceDate: date("source_date").notNull(),
+  decision: text("decision", { enum: PLAN_ADJUSTMENT_DECISIONS }).notNull(),
+  barrier: text("barrier", { enum: PLAN_ADJUSTMENT_BARRIERS }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
 // P2 — reference FX rate for portfolio equivalent
 export const fxRates = pgTable("fx_rates", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -251,4 +285,6 @@ export type GoalRevision = typeof goalRevisions.$inferSelect;
 export type NewGoalRevision = typeof goalRevisions.$inferInsert;
 export type Reflection = typeof reflections.$inferSelect;
 export type NewReflection = typeof reflections.$inferInsert;
+export type PlanAdjustment = typeof planAdjustments.$inferSelect;
+export type NewPlanAdjustment = typeof planAdjustments.$inferInsert;
 export type FxRate = typeof fxRates.$inferSelect;

@@ -2,6 +2,11 @@ import { z } from "zod";
 import { checklistItemKindSchema, ifThenPlanSchema } from "@/lib/validators/checklist";
 import { currencySchema, goalKindSchema } from "@/lib/validators/goal";
 import { checkinOutcomeValues } from "@/lib/validators/checkin";
+import {
+  PLAN_ADJUSTMENT_BARRIERS,
+  PLAN_ADJUSTMENT_DECISIONS,
+  PLAN_ADJUSTMENT_SOURCES,
+} from "@/lib/validators/plan-adjustment";
 import { logger } from "@/lib/log";
 
 // T7 (PLAN §4 A3, docs/goals-app-audit-2026-07-20/product/ANALYTICS_SPEC.md §2–3).
@@ -129,6 +134,15 @@ export const analyticsEventSchema = z.discriminatedUnion("name", [
     // inside the goal lock, and the operation itself is the signal.
     plan_type: ifThenPlanSchema.shape.planType.optional(),
     operation: z.enum(["created", "updated", "removed"]),
+  }),
+
+  // T12 — the plan-adjustment "узел сличения": what blocked the step and what
+  // the person chose to do about it. `note` never travels here (Decisions D9).
+  eventSchema("plan_adjustment_saved", {
+    source: z.enum(PLAN_ADJUSTMENT_SOURCES),
+    barrier: z.enum(PLAN_ADJUSTMENT_BARRIERS),
+    decision: z.enum(PLAN_ADJUSTMENT_DECISIONS),
+    changed_step: z.boolean(),
   }),
 ]);
 

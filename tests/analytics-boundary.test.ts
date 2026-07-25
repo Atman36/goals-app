@@ -76,6 +76,13 @@ const VALID_PAYLOADS: AnalyticsEvent[] = [
   { name: "weekly_cycle_completed", outcome: "skipped", had_if_then: true },
   { name: "focus_goal_set", goal_id: "0b7c2a4e-1f3d-4a2b-8c9d-5e6f70819203" },
   { name: "if_then_structured", plan_type: "relapse_prevention", operation: "created" },
+  {
+    name: "plan_adjustment_saved",
+    source: "checkin",
+    barrier: "unclear_step",
+    decision: "smaller",
+    changed_step: true,
+  },
 ];
 
 // Each entry is a real leak someone could write by accident. All must fail.

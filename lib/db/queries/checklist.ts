@@ -125,6 +125,30 @@ export async function insertChecklistItemTx(
   return inserted;
 }
 
+/** Single read inside the caller's transaction — same scope as
+ *  updateChecklistItemTx (goalId + deletedAt IS NULL), no ownership check:
+ *  the caller already proved liveness and ownership by getting a `tx` in the
+ *  first place (withLockedLiveGoal's contract). Added for T12 (lib/actions/
+ *  plan-adjustments.ts's change_trigger decision needs to read the item's
+ *  existing ifThen before it can update just its trigger). */
+export async function getChecklistItemTx(
+  tx: Transaction,
+  goalId: string,
+  itemId: string,
+): Promise<ChecklistItem | null> {
+  const [row] = await tx
+    .select()
+    .from(checklistItems)
+    .where(
+      and(
+        eq(checklistItems.id, itemId),
+        eq(checklistItems.goalId, goalId),
+        isNull(checklistItems.deletedAt),
+      ),
+    );
+  return row ?? null;
+}
+
 export async function updateChecklistItemTx(
   tx: Transaction,
   goalId: string,

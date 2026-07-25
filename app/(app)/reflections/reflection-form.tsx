@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Confetti } from "@/components/confetti";
 import { saveReflection, type ReflectionState } from "@/lib/actions/reflections";
 import type { ReflectionWithPromiseGoal } from "@/lib/db/queries/reflections";
 import { checklistQueryKey } from "@/components/goals/checklist-block";
@@ -106,6 +107,14 @@ export function ReflectionForm({
 
   const checkedPrevOutcome = current?.prevOutcome ?? preselectedPrevOutcome;
 
+  // T9 (PLAN §6 C2): celebrate the CLOSED CYCLE, not the act of logging. The
+  // action reports `cycleClosed` only on the "no outcome" → "outcome"
+  // transition, so re-saving the same week celebrates nothing. `burstFor`
+  // holds the state object already celebrated — useActionState hands back a
+  // NEW object per submit, so one burst per closing and no effect needed.
+  const [burstFor, setBurstFor] = useState<ReflectionState | null>(null);
+  const celebrating = state.status === "success" && !!state.cycleClosed && burstFor !== state;
+
   // Decisions D5: a soft-deleted promiseGoal reads back as promiseGoalId set
   // but promiseGoal null — the select must not silently default to a
   // DIFFERENT goal in that case, so it falls back to the placeholder instead
@@ -142,6 +151,8 @@ export function ReflectionForm({
   };
 
   return (
+    <>
+      {celebrating ? <Confetti variant="small" onDone={() => setBurstFor(state)} /> : null}
     <Card>
       {current ? (
         <CardHeader>
@@ -305,5 +316,6 @@ export function ReflectionForm({
         </form>
       </CardContent>
     </Card>
+    </>
   );
 }

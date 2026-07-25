@@ -42,10 +42,14 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function crossedThresholds(prevPercent: number, nextPercent: number) {
-  const small = [25, 50, 75].some((t) => prevPercent < t && nextPercent >= t);
-  const big = prevPercent < 100 && nextPercent >= 100;
-  return { small, big };
+// T9 (PLAN §6 C2): the 25/50/75 % milestones are gone. Rewarding the act of
+// LOGGING a contribution reinforces keeping the journal, not moving toward the
+// goal — and the reinforced unit of behaviour matters more than the size of
+// the reward. What is left here is the 100 % crossing, which is not a
+// percentage milestone but the goal turning "achieved"; closing a weekly cycle
+// is celebrated where it happens, in the reflection form.
+function crossedTarget(prevPercent: number, nextPercent: number): boolean {
+  return prevPercent < 100 && nextPercent >= 100;
 }
 
 function sumSaved(initialAmount: bigint, contributions: ClientContribution[]): bigint {
@@ -332,13 +336,9 @@ export function QuickAddSheet({
       const prevPercent = calcFinancialProgress(prevSaved, targetAmount) * 100;
       const nextSaved = prevSaved + signedAmountMinor;
       const nextPercent = calcFinancialProgress(nextSaved, targetAmount) * 100;
-      const { small, big } = crossedThresholds(prevPercent, nextPercent);
-
-      if (big) {
+      if (crossedTarget(prevPercent, nextPercent)) {
         setConfettiVariant("big");
         setShowAchievedPrompt(true);
-      } else if (small) {
-        setConfettiVariant("small");
       }
 
       resetForm();

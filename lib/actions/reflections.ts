@@ -25,6 +25,10 @@ export type ReflectionState = {
    *  answers were NOT saved; the user must reload to get the new week's form. */
   status: "idle" | "success" | "error" | "stale";
   message?: string;
+  /** T9 (PLAN §6 C2): this save is the one that closed a weekly cycle — the
+   *  previous promise went from "no outcome" to having one. Set only on that
+   *  transition, so re-saving the same week celebrates nothing. */
+  cycleClosed?: boolean;
 };
 
 const GENERIC_ERROR = "Не удалось сохранить рефлексию, попробуйте ещё раз";
@@ -214,8 +218,10 @@ export async function saveReflection(
   });
 
   // North Star, and only on the transition: re-saving the same week must not
-  // count the cycle again.
-  if (parsed.data.prevOutcome && !outcomeAlreadyRecorded) {
+  // count the cycle again. The SAME flag drives the event and the celebration
+  // the form shows (T9) — computing it twice is how the two drift apart.
+  const cycleClosed = !!parsed.data.prevOutcome && !outcomeAlreadyRecorded;
+  if (cycleClosed && parsed.data.prevOutcome) {
     track({
       name: "weekly_cycle_completed",
       goal_id: promiseGoalId,
@@ -237,5 +243,7 @@ export async function saveReflection(
   revalidatePath("/review");
   revalidatePath("/today"); // the global streak may change
 
-  return { status: "success", message: "Сохранено ✓" };
+  // Celebrated whatever the outcome, including «Не в этот раз»: what is being
+  // marked is that the cycle closed honestly, not that the week went well.
+  return { status: "success", message: "Сохранено ✓", cycleClosed };
 }

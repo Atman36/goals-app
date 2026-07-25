@@ -18,6 +18,7 @@ import {
 } from "@/lib/db/queries/reflections";
 import { toDateKey } from "@/lib/utils/date-keys";
 import { reflectionInputSchema, resolveReflectionWeek } from "@/lib/validators/reflection";
+import { track } from "@/lib/analytics/events";
 
 export type ReflectionState = {
   /** "stale" = the week rolled over while the form was open (CR-030). The
@@ -54,7 +55,13 @@ async function applyIfThenStep(
   trigger: string | undefined,
   action: string | undefined,
   planType: "initiation" | "maintenance" | "relapse_prevention" | undefined,
-): Promise<{ ifThenItemId: string | null; newIfThen: string | undefined }> {
+): Promise<{
+  ifThenItemId: string | null;
+  newIfThen: string | undefined;
+  /** T7: which of create/update/remove actually happened, so the caller can
+   *  report it AFTER the transaction commits. `null` = nothing to report. */
+  operation: "created" | "updated" | "removed" | null;
+}> {
   if (trigger && action) {
     const ifThen = { trigger, action, planType: planType ?? "initiation" };
     const summary = formatIfThenSummary(trigger, action);
@@ -64,6 +71,7 @@ async function applyIfThenStep(
     const dueDate = toDateKey(addDays(parseISO(weekStart), 6));
 
     let ifThenItemId = currentItemId;
+    let operation: "created" | "updated" = "updated";
     if (ifThenItemId) {
       await updateChecklistItemTx(tx, goalId, ifThenItemId, { title, ifThen, dueDate });
     } else {
@@ -75,14 +83,16 @@ async function applyIfThenStep(
         dueDate,
       });
       ifThenItemId = created.id;
+      operation = "created";
     }
-    return { ifThenItemId, newIfThen: summary };
+    return { ifThenItemId, newIfThen: summary, operation };
   }
 
   if (currentItemId) {
     await softDeleteChecklistItemTx(tx, goalId, currentItemId);
+    return { ifThenItemId: null, newIfThen: undefined, operation: "removed" };
   }
-  return { ifThenItemId: null, newIfThen: undefined };
+  return { ifThenItemId: null, newIfThen: undefined, operation: null };
 }
 
 /** Saves (upserts) this week's reflection — the 5 questions plus, when a
@@ -141,15 +151,22 @@ export async function saveReflection(
   // idiom — see lib/db/queries/parent-lock.ts), not in an earlier round trip
   // a concurrent soft-delete could race. A promise with no goal (D2/D4) never
   // opens a transaction at all — there is no parent row to hold.
-  let saved: Reflection | null;
-  if (promiseGoalId) {
-    // T5 Decisions #1: the if-then step always belongs to the promise's
-    // goal, so it only ever exists inside this branch. `currentItemId` is
-    // this week's already-saved step, if any (Decisions #3 idempotency).
-    const currentItemId = (await getReflectionByWeek(user.id, weekStart))?.ifThenItemId ?? null;
+  // T5 Decisions #1 / T7: this week's row as it stands BEFORE the write —
+  // `ifThenItemId` drives the idempotent step update, `prevOutcome` tells the
+  // cycle event whether the outcome is being registered for the first time.
+  // Read outside the lock like this file's other pre-lock reads: a concurrent
+  // duplicate save could at worst report the cycle twice, which is a log line,
+  // not a data fault.
+  const existing = await getReflectionByWeek(user.id, weekStart);
+  const outcomeAlreadyRecorded = existing?.prevOutcome != null;
 
-    saved = await withLockedLiveGoal(user.id, promiseGoalId, async (tx) => {
-      const { ifThenItemId, newIfThen } = await applyIfThenStep(
+  let saved: Reflection | null;
+  let ifThenOperation: "created" | "updated" | "removed" | null = null;
+  if (promiseGoalId) {
+    const currentItemId = existing?.ifThenItemId ?? null;
+
+    const result = await withLockedLiveGoal(user.id, promiseGoalId, async (tx) => {
+      const { ifThenItemId, newIfThen, operation } = await applyIfThenStep(
         tx,
         promiseGoalId,
         currentItemId,
@@ -158,14 +175,17 @@ export async function saveReflection(
         ifThenAction,
         ifThenPlanType,
       );
-      return upsertReflection(
+      const row = await upsertReflection(
         user.id,
         weekStart,
         { ...reflectionFields, ifThenItemId, newIfThen },
         tx,
       );
+      return { row, operation };
     });
-    if (!saved) return { status: "error", message: GOAL_NOT_FOUND_ERROR };
+    if (!result?.row) return { status: "error", message: GOAL_NOT_FOUND_ERROR };
+    saved = result.row;
+    ifThenOperation = result.operation;
   } else {
     const activeGoals = await listGoals(user.id, { status: "active" });
     if (activeGoals.length > 0) {
@@ -173,6 +193,44 @@ export async function saveReflection(
     }
     saved = await upsertReflection(user.id, weekStart, reflectionFields);
     if (!saved) return { status: "error", message: GENERIC_ERROR };
+  }
+
+  // T7: reported after the write, outside the transaction. Counts and bits
+  // only — not one of the five answers, the promise, or the if-then text.
+  const hasIfThen = !!(ifThenTrigger && ifThenAction);
+  track({
+    name: "reflection_saved",
+    goal_id: promiseGoalId,
+    answers_filled: [
+      reflectionFields.promised,
+      reflectionFields.done,
+      reflectionFields.blocked,
+      reflectionFields.learned,
+      reflectionFields.promise,
+    ].filter((answer) => !!answer).length,
+    has_promise: !!reflectionFields.promise,
+    promise_has_goal: !!promiseGoalId,
+    has_if_then: hasIfThen,
+  });
+
+  // North Star, and only on the transition: re-saving the same week must not
+  // count the cycle again.
+  if (parsed.data.prevOutcome && !outcomeAlreadyRecorded) {
+    track({
+      name: "weekly_cycle_completed",
+      goal_id: promiseGoalId,
+      outcome: parsed.data.prevOutcome,
+      had_if_then: hasIfThen,
+    });
+  }
+
+  if (ifThenOperation) {
+    track({
+      name: "if_then_structured",
+      goal_id: promiseGoalId,
+      plan_type: ifThenOperation === "removed" ? undefined : (ifThenPlanType ?? "initiation"),
+      operation: ifThenOperation,
+    });
   }
 
   revalidatePath("/reflections");

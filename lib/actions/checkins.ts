@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { upsertCheckinRow } from "@/lib/db/queries/checkins";
 import { checkinInputSchema, resolveCheckinDate } from "@/lib/validators/checkin";
+import { feelingBucket, track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 
 /** Like SimpleActionResult, plus the one failure the UI must handle
@@ -63,6 +64,17 @@ export async function saveCheckin(input: unknown): Promise<CheckinActionResult> 
   });
   if (!saved) return { ok: false, error: GENERIC_NOT_FOUND_ERROR };
   log.info({ goalId: parsed.data.goalId, date }, "checkin saved");
+
+  // T7: after the write, outside any transaction. The note is reported as a
+  // bit and the feeling as a bucket — neither ever travels as itself.
+  track({
+    name: "checkin_saved",
+    goal_id: parsed.data.goalId,
+    goal_kind: goal.kind,
+    outcome: parsed.data.outcome,
+    feeling_bucket: feelingBucket(parsed.data.feeling),
+    has_note: parsed.data.note != null,
+  });
 
   revalidatePath("/");
   revalidatePath("/today");

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getGoalWithDetails } from "@/lib/db/queries/goals";
 import { setUserFocusGoal } from "@/lib/db/queries/users";
 import { goalIdSchema } from "@/lib/validators/goal";
+import { track } from "@/lib/analytics/events";
 import { withRequestId } from "@/lib/log";
 import type { SimpleActionResult } from "@/lib/actions/goals";
 
@@ -26,6 +27,10 @@ export async function setFocusGoal(goalId: string): Promise<SimpleActionResult> 
 
   await setUserFocusGoal(user.id, goalId);
   log.info({ goalId }, "focus goal set");
+
+  // T7: choosing a Цель №1 is the entry point of the daily loop. Clearing it
+  // has no event — nothing in the plan asks a question that needs one.
+  track({ name: "focus_goal_set", goal_id: goalId, goal_kind: goal.kind });
 
   revalidatePath("/");
   revalidatePath("/today");

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/reflections", label: "Неделя" },
   { href: "/review", label: "Обзор" },
   { href: "/gallery", label: "Галерея" },
+  { href: "/metrics", label: "Приборы" },
   { href: "/settings", label: "Настройки" },
 ];
 

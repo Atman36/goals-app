@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:backup": "node --env-file=.env scripts/backup-db.mjs"
+    "db:backup": "node --env-file=.env scripts/backup-db.mjs",
+    "metrics:snapshot": "node --env-file=.env scripts/metrics-snapshot.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import { saveCheckin } from "@/lib/actions/checkins";
 import type { CheckinOutcome } from "@/lib/validators/checkin";
 import { FEELING_LABELS, OUTCOME_LABELS } from "@/lib/checkin-labels";
+import { shouldPromptAdjustment } from "@/lib/utils/plan-adjustment-prompt";
+import type { AdjustmentStepOption } from "@/lib/utils/adjustment-step";
+import { PlanAdjustmentStep } from "@/components/goals/plan-adjustment-step";
 
 export type CheckinCardInitial = {
   outcome: CheckinOutcome;
@@ -46,12 +49,20 @@ export function CheckinCard({
   goalId,
   expectedDate,
   initial,
+  steps,
+  lastAdjustmentAt,
 }: {
   goalId: string;
   /** The UTC day this card was rendered for, posted back verbatim so the
    *  action can refuse a submit that crossed midnight (GA-013). */
   expectedDate: string;
   initial: CheckinCardInitial | null;
+  /** This goal's open checklist steps, already reshaped for the plan-
+   *  adjustment step's step picker (T13). */
+  steps: AdjustmentStepOption[];
+  /** Most recent live plan-adjustment for this goal, if any — feeds the
+   *  72-hour cooldown in shouldPromptAdjustment (T13). */
+  lastAdjustmentAt: Date | null;
 }) {
   const router = useRouter();
   const [outcome, setOutcome] = useState<CheckinOutcome | null>(initial?.outcome ?? null);
@@ -61,6 +72,29 @@ export function CheckinCard({
   const [error, setError] = useState<string | undefined>();
   const [isStale, setIsStale] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [showAdjustment, setShowAdjustment] = useState(false);
+
+  // D2: computed client-side only, never during the initial render — a
+  // server-rendered value here would disagree with the client's clock and
+  // trip a hydration mismatch. Runs once on mount so the question survives a
+  // reload after an honest "partial"/"skipped" that hasn't been answered yet.
+  useEffect(() => {
+    if (initial && (initial.outcome === "partial" || initial.outcome === "skipped")) {
+      // Deliberate: this can only run post-hydration (D2) — `now: new Date()`
+      // must be the client's clock, so there is no render-time value to
+      // derive this from instead.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShowAdjustment(
+        shouldPromptAdjustment({
+          outcome: initial.outcome,
+          lastAdjustmentAt,
+          now: new Date(),
+          isBackfill: false,
+        }),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function clearFeedback() {
     setSaved(false);
@@ -90,6 +124,9 @@ export function CheckinCard({
       const result = await saveCheckin({ goalId, expectedDate, outcome, feeling, note });
       if (result.ok) {
         setSaved(true);
+        setShowAdjustment(
+          shouldPromptAdjustment({ outcome, lastAdjustmentAt, now: new Date(), isBackfill: false }),
+        );
         router.refresh();
       } else {
         setError(result.error);
@@ -176,6 +213,16 @@ export function CheckinCard({
         <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
           {isPending ? "Сохраняем…" : "Сохранить чек-ин"}
         </Button>
+
+        {showAdjustment ? (
+          <PlanAdjustmentStep
+            goalId={goalId}
+            source="checkin"
+            expectedToken={expectedDate}
+            steps={steps}
+            onDone={() => setShowAdjustment(false)}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -12,10 +12,13 @@ import {
 import { getGlobalConsistency } from "@/lib/db/queries/streaks";
 import { getCheckinForGoalOnDate } from "@/lib/db/queries/checkins";
 import { getLatestReflectionBefore, getReflectionByWeek } from "@/lib/db/queries/reflections";
+import { listChecklistItems } from "@/lib/db/queries/checklist";
+import { getRecentPlanAdjustmentForGoal } from "@/lib/db/queries/plan-adjustments";
 import { todayKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { promiseCardState } from "@/lib/utils/promise-card";
 import { consistencyBadgeState } from "@/lib/utils/consistency-badge";
+import { toAdjustmentStepOptions } from "@/lib/utils/adjustment-step";
 import { classifyDue, formatDueLabelRu, type DueBucket } from "@/lib/utils/reminders";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/goals/empty-state";
@@ -107,6 +110,12 @@ export default async function TodayPage() {
       getLatestReflectionBefore(user.id, weekStart),
     ]);
   const checkin = focusGoal ? await getCheckinForGoalOnDate(user.id, focusGoal.id, today) : null;
+  const [checklistItems, recentAdjustment] = focusGoal
+    ? await Promise.all([
+        listChecklistItems(user.id, focusGoal.id),
+        getRecentPlanAdjustmentForGoal(user.id, focusGoal.id),
+      ])
+    : [[], null];
 
   const stepGroups = groupSteps(steps, today);
   const deadlineGroups = groupDeadlines(deadlines, today);
@@ -188,6 +197,8 @@ export default async function TodayPage() {
                       ? { outcome: checkin.outcome, feeling: checkin.feeling, note: checkin.note }
                       : null
                   }
+                  steps={toAdjustmentStepOptions(checklistItems)}
+                  lastAdjustmentAt={recentAdjustment?.createdAt ?? null}
                 />
               </div>
             ) : (

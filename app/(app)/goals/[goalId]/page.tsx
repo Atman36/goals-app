@@ -9,7 +9,7 @@ import { listChecklistItems } from "@/lib/db/queries/checklist";
 import { listComments } from "@/lib/db/queries/comments";
 import { listMediaByGoal } from "@/lib/db/queries/media";
 import { getWoopByGoal } from "@/lib/db/queries/woop";
-import { getGoalStreak } from "@/lib/db/queries/streaks";
+import { getGoalConsistency } from "@/lib/db/queries/streaks";
 import { listCheckinsForGoal } from "@/lib/db/queries/checkins";
 import { listGoalRevisions } from "@/lib/db/queries/goal-revisions";
 import { getSignedMediaUrl } from "@/lib/storage";
@@ -25,7 +25,8 @@ import { CommentsBlock, type CommentWithPhotoUrl } from "@/components/goals/comm
 import { GoalGallery, type GalleryImage } from "@/components/goals/goal-gallery";
 import { WoopBlock } from "@/components/goals/woop-block";
 import { FocusToggle } from "@/components/goals/focus-toggle";
-import { StreakBadge } from "@/components/goals/streak-badge";
+import { ConsistencyBadge } from "@/components/goals/consistency-badge";
+import { consistencyBadgeState } from "@/lib/utils/consistency-badge";
 import { TrajectoryBlock } from "@/components/goals/trajectory-block";
 import { buildTrajectory } from "@/lib/utils/trajectory";
 
@@ -51,12 +52,12 @@ export default async function GoalPage({
   const isFinancial = goal.kind === "financial";
 
   const contributions = isFinancial ? await listContributions(user.id, goalId) : [];
-  const [checklistItems, comments, media, woop, streak, checkins, revisions] = await Promise.all([
+  const [checklistItems, comments, media, woop, consistency, checkins, revisions] = await Promise.all([
     listChecklistItems(user.id, goalId),
     listComments(user.id, goalId),
     listMediaByGoal(user.id, goalId),
     getWoopByGoal(user.id, goalId),
-    getGoalStreak(user.id, goalId),
+    getGoalConsistency(user.id, goalId),
     listCheckinsForGoal(user.id, goalId),
     listGoalRevisions(user.id, goalId),
   ]);
@@ -182,7 +183,9 @@ export default async function GoalPage({
             {goal.status === "achieved" ? " · Достигнута 🎉" : ""}
           </p>
 
-          <StreakBadge weeks={streak} className="self-start" />
+          {/* T8: rolling consistency, no zeroing streak. The return-after-gap
+              line is «Сегодня»-only (Decisions #5), so it is not rendered here. */}
+          <ConsistencyBadge state={consistencyBadgeState(consistency)} className="self-start" />
 
           {isFinancial ? (
             <QuickAddSheet

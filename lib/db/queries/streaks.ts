@@ -2,8 +2,17 @@ import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { checkins, checklistItems, contributions, goals, reflections } from "@/lib/db/schema";
 import { todayKey, toDateKey } from "@/lib/utils/date-keys";
+import { gapsAndReturns, lastNWeekStarts, rollingConsistency } from "@/lib/metrics/definitions";
+import { CONSISTENCY_WINDOW_WEEKS } from "@/lib/utils/consistency-badge";
 import { weekStartKey } from "@/lib/utils/week-keys";
-import { computeStreakWeeks } from "@/lib/utils/streak";
+
+/** What the badge needs: how many of the last M weeks were active, and whether
+ *  this week follows a gap (T8 / PLAN §6 C1 — no zeroing streak any more). */
+export type Consistency = {
+  activeWeeks: number;
+  windowWeeks: number;
+  returnedAfterGap: boolean;
+};
 
 /**
  * Set of Monday-anchored week-start keys that had activity — a contribution,
@@ -11,6 +20,13 @@ import { computeStreakWeeks } from "@/lib/utils/streak";
  * "не сегодня" — honest marking is the North-Star action, growth-reactor v5
  * §5/§6/§12) — across the given goals. Ownership is guaranteed by callers
  * deriving `goalIds` from the user's own goals (see below).
+ *
+ * NOTE — two definitions of "an active week" live in this codebase ON PURPOSE
+ * (PLAN §5, caveat 4). This broad one answers "was the person here at all" and
+ * feeds the badge. The stricter one in lib/metrics/* counts only a check-in or
+ * a reflection, because /metrics answers a different question: "did a cycle of
+ * the methodology actually run". Do not reconcile them — collapsing the two
+ * silently changes what the four-week trial measures.
  */
 async function collectActiveWeeks(goalIds: string[]): Promise<Set<string>> {
   if (goalIds.length === 0) return new Set();
@@ -65,9 +81,25 @@ async function collectReflectionWeeks(userId: string): Promise<Set<string>> {
   return weeks;
 }
 
-/** Global weekly streak across all of the user's non-deleted goals (any
+/** Turns a set of active weeks into the rolling window the badge shows. The
+ *  return marker is the current week appearing in `gapsAndReturns`' returns —
+ *  i.e. this week is active and the run of weeks right before it was not. */
+function toConsistency(activeWeeks: Set<string>): Consistency {
+  const window = lastNWeekStarts(todayKey(), CONSISTENCY_WINDOW_WEEKS);
+  const active = [...activeWeeks];
+  const { active: activeCount, window: windowSize } = rollingConsistency(active, window);
+  const currentWeek = window[window.length - 1];
+  const { returns } = gapsAndReturns(active, window);
+  return {
+    activeWeeks: activeCount,
+    windowWeeks: windowSize,
+    returnedAfterGap: returns.some((r) => r.weekStart === currentWeek),
+  };
+}
+
+/** Rolling consistency across all of the user's non-deleted goals (any
  *  status) plus the user's own reflection weeks. */
-export async function getGlobalStreak(userId: string): Promise<number> {
+export async function getGlobalConsistency(userId: string): Promise<Consistency> {
   const rows = await db
     .select({ id: goals.id })
     .from(goals)
@@ -76,17 +108,15 @@ export async function getGlobalStreak(userId: string): Promise<number> {
     collectActiveWeeks(rows.map((r) => r.id)),
     collectReflectionWeeks(userId),
   ]);
-  const weeks = new Set([...goalWeeks, ...reflectionWeeks]);
-  return computeStreakWeeks(weeks, weekStartKey(todayKey()));
+  return toConsistency(new Set([...goalWeeks, ...reflectionWeeks]));
 }
 
-/** Weekly streak for a single goal. Returns 0 when the goal isn't the user's. */
-export async function getGoalStreak(userId: string, goalId: string): Promise<number> {
+/** Rolling consistency for a single goal. Empty when the goal isn't the user's. */
+export async function getGoalConsistency(userId: string, goalId: string): Promise<Consistency> {
   const [g] = await db
     .select({ id: goals.id })
     .from(goals)
     .where(and(eq(goals.id, goalId), eq(goals.userId, userId), isNull(goals.deletedAt)));
-  if (!g) return 0;
-  const weeks = await collectActiveWeeks([goalId]);
-  return computeStreakWeeks(weeks, weekStartKey(todayKey()));
+  if (!g) return toConsistency(new Set());
+  return toConsistency(await collectActiveWeeks([goalId]));
 }

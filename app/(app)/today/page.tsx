@@ -9,18 +9,19 @@ import {
   type ChecklistStepDue,
   type GoalDeadline,
 } from "@/lib/db/queries/agenda";
-import { getGlobalStreak } from "@/lib/db/queries/streaks";
+import { getGlobalConsistency } from "@/lib/db/queries/streaks";
 import { getCheckinForGoalOnDate } from "@/lib/db/queries/checkins";
 import { getLatestReflectionBefore, getReflectionByWeek } from "@/lib/db/queries/reflections";
 import { todayKey } from "@/lib/utils/date-keys";
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { promiseCardState } from "@/lib/utils/promise-card";
+import { consistencyBadgeState } from "@/lib/utils/consistency-badge";
 import { classifyDue, formatDueLabelRu, type DueBucket } from "@/lib/utils/reminders";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/goals/empty-state";
 import { GoalCard } from "@/components/goals/goal-card";
 import { CheckinCard } from "@/components/goals/checkin-card";
-import { StreakBadge } from "@/components/goals/streak-badge";
+import { ConsistencyBadge } from "@/components/goals/consistency-badge";
 import { WeeklyPromiseCard } from "@/components/goals/weekly-promise-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -96,12 +97,12 @@ export default async function TodayPage() {
   const today = todayKey();
   const weekStart = weekStartKey(today);
 
-  const [focusGoal, steps, deadlines, streak, currentReflection, previousReflection] =
+  const [focusGoal, steps, deadlines, consistency, currentReflection, previousReflection] =
     await Promise.all([
       getFocusGoal(user.id),
       listOverdueAndUpcomingSteps(user.id, 7),
       listGoalsByDeadline(user.id, 14),
-      getGlobalStreak(user.id),
+      getGlobalConsistency(user.id),
       getReflectionByWeek(user.id, weekStart),
       getLatestReflectionBefore(user.id, weekStart),
     ]);
@@ -109,6 +110,7 @@ export default async function TodayPage() {
 
   const stepGroups = groupSteps(steps, today);
   const deadlineGroups = groupDeadlines(deadlines, today);
+  const badge = consistencyBadgeState(consistency);
 
   // T6 (PLAN §5 B2): the weekly promise lives here every day, not only on
   // /reflections. `unclosed-previous` is rendered above everything — including
@@ -141,7 +143,12 @@ export default async function TodayPage() {
       <div className="flex flex-col gap-1">
         <h1 className="font-display text-2xl font-bold tracking-tight">Сегодня</h1>
         <p className="text-sm text-muted-foreground">Что сделать сегодня по всем активным целям</p>
-        <StreakBadge weeks={streak} className="mt-2 self-start" />
+        <ConsistencyBadge state={badge} className="mt-2 self-start" />
+        {/* T8 Decisions #5: the return after a gap gets its own neutral line
+            — no fire, no counter, no exclamation mark — and only here. */}
+        {badge.returnNote ? (
+          <p className="mt-2 text-sm text-muted-foreground">{badge.returnNote}</p>
+        ) : null}
       </div>
 
       {/* Both blocks sit outside the isEmpty branch: a promise can exist while

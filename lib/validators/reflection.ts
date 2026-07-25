@@ -43,6 +43,16 @@ export const reflectionInputSchema = z.object({
     .max(2000)
     .optional()
     .transform((v) => (v === "" ? undefined : v)),
+  // The goal this week's promise moves (Decisions D1/D3 — drizzle/0013). The
+  // <select> in reflection-form.tsx always posts a value when it renders at
+  // all; empty-string handling mirrors the other optional fields above so an
+  // unset control still parses instead of failing the whole submit.
+  promiseGoalId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === "" ? undefined : v))
+    .pipe(z.uuid().optional()),
 });
 
 export type ReflectionInput = z.infer<typeof reflectionInputSchema>;

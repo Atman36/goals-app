@@ -2,6 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
+import type { Reflection } from "@/lib/db/schema";
+import { listGoals } from "@/lib/db/queries/goals";
+import { withLockedLiveGoal } from "@/lib/db/queries/parent-lock";
 import { getLatestReflectionBefore, upsertReflection } from "@/lib/db/queries/reflections";
 import { reflectionInputSchema, resolveReflectionWeek } from "@/lib/validators/reflection";
 
@@ -16,6 +19,8 @@ const GENERIC_ERROR = "Не удалось сохранить рефлексию
 const MISSING_OUTCOME_ERROR = "Отметьте исход прошлого обещания";
 const STALE_WEEK_ERROR =
   "Неделя сменилась, пока форма была открыта — ответы не сохранены. Обновите страницу, чтобы заполнить рефлексию новой недели.";
+const GOAL_REQUIRED_ERROR = "Выберите цель, к которой относится обещание";
+const GOAL_NOT_FOUND_ERROR = "Цель не найдена или удалена";
 
 /** Saves (upserts) this week's reflection — the 5 questions plus, when a
  *  previous promise exists, its outcome (growth-reactor v5 §6/§11/§12: a
@@ -40,6 +45,7 @@ export async function saveReflection(
     promise: formData.get("promise"),
     prevOutcome: formData.get("prevOutcome") || undefined,
     newIfThen: formData.get("newIfThen"),
+    promiseGoalId: formData.get("promiseGoalId") || undefined,
   });
   if (!parsed.success) {
     return { status: "error", message: GENERIC_ERROR };
@@ -57,8 +63,27 @@ export async function saveReflection(
     return { status: "error", message: MISSING_OUTCOME_ERROR };
   }
 
-  const saved = await upsertReflection(user.id, weekStart, parsed.data);
-  if (!saved) return { status: "error", message: GENERIC_ERROR };
+  const { promiseGoalId } = parsed.data;
+
+  // Decisions D1/D3: a goal is required whenever the user has one to point
+  // at; the ownership check happens under the SAME lock as the write (GA-015
+  // idiom — see lib/db/queries/parent-lock.ts), not in an earlier round trip
+  // a concurrent soft-delete could race. A promise with no goal (D2/D4) never
+  // opens a transaction at all — there is no parent row to hold.
+  let saved: Reflection | null;
+  if (promiseGoalId) {
+    saved = await withLockedLiveGoal(user.id, promiseGoalId, (tx) =>
+      upsertReflection(user.id, weekStart, parsed.data, tx),
+    );
+    if (!saved) return { status: "error", message: GOAL_NOT_FOUND_ERROR };
+  } else {
+    const activeGoals = await listGoals(user.id, { status: "active" });
+    if (activeGoals.length > 0) {
+      return { status: "error", message: GOAL_REQUIRED_ERROR };
+    }
+    saved = await upsertReflection(user.id, weekStart, parsed.data);
+    if (!saved) return { status: "error", message: GENERIC_ERROR };
+  }
 
   revalidatePath("/reflections");
   revalidatePath("/review");

@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { saveReflection, type ReflectionState } from "@/lib/actions/reflections";
-import type { Reflection } from "@/lib/db/schema";
+import type { ReflectionWithPromiseGoal } from "@/lib/db/queries/reflections";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,13 @@ const radioLabelClassName = cn(
   "has-checked:border-transparent has-checked:bg-primary has-checked:text-primary-foreground",
 );
 
+// Matches settings-form.tsx's <select> styling.
+const selectClassName = cn(
+  "h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none transition-colors",
+  "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+  "dark:bg-input/30",
+);
+
 const initialState: ReflectionState = { status: "idle" };
 
 /** /reflections's form (Stage0-3, growth-reactor v5 §6/§11/§12): mirrors
@@ -54,14 +61,32 @@ export function ReflectionForm({
   current,
   prevPromise,
   expectedWeekStart,
+  activeGoals,
+  defaultGoalId,
 }: {
-  current: Reflection | null;
+  current: ReflectionWithPromiseGoal | null;
   prevPromise: string | null;
   /** The week-start key this form was rendered for. Posted back so the action
    *  can refuse a submit that crossed the week boundary (CR-030). */
   expectedWeekStart: string;
+  /** The user's active goals, fetched by the page (app/(app)/reflections/page.tsx)
+   *  via the existing goals query — this component makes no DB calls of its own. */
+  activeGoals: { id: string; title: string }[];
+  /** Decisions D6: the focus goal if one is set, else the first active goal in
+   *  the app's own ordering. Null only when there are no active goals. */
+  defaultGoalId: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(saveReflection, initialState);
+
+  // Decisions D5: a soft-deleted promiseGoal reads back as promiseGoalId set
+  // but promiseGoal null — the select must not silently default to a
+  // DIFFERENT goal in that case, so it falls back to the placeholder instead
+  // of D6's default.
+  const promiseGoalDefault = current?.promiseGoal
+    ? current.promiseGoal.id
+    : current?.promiseGoalId
+      ? ""
+      : (defaultGoalId ?? "");
 
   // "promised" is prefilled from last week's promise only on a fresh (never
   // saved) week — once this week's row exists, its own saved value wins
@@ -123,6 +148,36 @@ export function ReflectionForm({
               />
             </div>
           ))}
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="promiseGoalId">Цель, к которой относится обещание</Label>
+            {activeGoals.length > 0 ? (
+              <select
+                id="promiseGoalId"
+                name="promiseGoalId"
+                defaultValue={promiseGoalDefault}
+                className={selectClassName}
+              >
+                {promiseGoalDefault === "" ? (
+                  <option value="" disabled>
+                    Выберите цель
+                  </option>
+                ) : null}
+                {activeGoals.map((goal) => (
+                  <option key={goal.id} value={goal.id}>
+                    {goal.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Активных целей нет — обещание сохранится без привязки к цели
+              </p>
+            )}
+            {current?.promiseGoalId && !current.promiseGoal ? (
+              <p className="text-sm text-muted-foreground">Цель удалена</p>
+            ) : null}
+          </div>
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="newIfThen">Новый шаг «если — то» (необязательно)</Label>

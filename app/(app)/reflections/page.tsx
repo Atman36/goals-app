@@ -2,6 +2,8 @@ import { addDays, format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 
 import { getCurrentUser } from "@/lib/auth";
+import { getFocusGoal } from "@/lib/db/queries/agenda";
+import { listGoals } from "@/lib/db/queries/goals";
 import {
   countCompletedCycles,
   getLatestReflectionBefore,
@@ -26,12 +28,18 @@ export default async function ReflectionsPage() {
   const weekStart = weekStartKey(todayKey());
   const weekEnd = addDays(parseISO(weekStart), 6);
 
-  const [current, prev, history, cycles] = await Promise.all([
+  const [current, prev, history, cycles, activeGoals, focusGoal] = await Promise.all([
     getReflectionByWeek(user.id, weekStart),
     getLatestReflectionBefore(user.id, weekStart),
     listReflections(user.id, 12),
     countCompletedCycles(user.id),
+    listGoals(user.id, { status: "active" }),
+    getFocusGoal(user.id),
   ]);
+
+  // Decisions D6: the focus goal (Цель №1) if set, else the first active goal
+  // in the app's own default ordering (listGoals' default sort — deadline).
+  const defaultGoalId = focusGoal?.id ?? activeGoals[0]?.id ?? null;
 
   const subtitle = `${format(parseISO(weekStart), "d MMMM", { locale: ru })} – ${format(weekEnd, "d MMMM yyyy", { locale: ru })}`;
 
@@ -52,6 +60,8 @@ export default async function ReflectionsPage() {
         current={current}
         prevPromise={prev?.promise ?? null}
         expectedWeekStart={weekStart}
+        activeGoals={activeGoals.map((goal) => ({ id: goal.id, title: goal.title }))}
+        defaultGoalId={defaultGoalId}
       />
 
       {history.length > 0 ? (

@@ -23,7 +23,12 @@ import {
   formatMoney,
   parseMajorDecimalToMinor,
 } from "@/lib/utils/money";
-import { calcRequiredMonthlyPace, calcTrailingMonthlyPace, comparePace } from "@/lib/utils/pace";
+import {
+  calcRequiredMonthlyPace,
+  calcTrailingMonthlyPace,
+  comparePace,
+  paceLabel,
+} from "@/lib/utils/pace";
 import { cn } from "@/lib/utils";
 import type { Currency } from "@/lib/validators/goal";
 import type { Contribution } from "@/lib/db/schema";
@@ -153,23 +158,17 @@ export function FinancialProgressHeader({
         <span className="text-[13px] text-muted-foreground">
           из {formatMoney(targetAmount, currency)} · осталось {formatMoney(remaining, currency)}
         </span>
+        {/* T10: a forecast, not a verdict. One neutral pill for all three
+            states — the colour alarm was the judgement, and the wording lives
+            in lib/utils/pace.ts so it has a single home and a test. */}
         {paceStatus && requiredPace !== null ? (
           <span
             className={cn(
               "mt-2 inline-block self-start rounded-full px-3 py-1.5 text-xs font-bold",
-              paceStatus === "behind"
-                ? "bg-warn/12 text-warn"
-                : paceStatus === "ahead"
-                  ? "bg-positive/12 text-positive"
-                  : "bg-primary/12 text-primary",
+              "bg-muted text-muted-foreground",
             )}
           >
-            {paceStatus === "behind"
-              ? "Нужно ускориться"
-              : paceStatus === "ahead"
-                ? "Опережаете график"
-                : "В графике"}{" "}
-            · ~{formatMoney(requiredPace, currency)}/мес
+            {paceLabel(paceStatus, formatMoney(requiredPace, currency))}
           </span>
         ) : null}
       </div>

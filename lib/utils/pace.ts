@@ -101,3 +101,25 @@ export function calcTrailingMonthlyPace(
   if (sum <= 0n) return 0n;
   return sum / BigInt(windowMonths);
 }
+
+/**
+ * The pace indicator's user-facing sentence (T10 / PLAN §6 C3).
+ *
+ * The indicator used to deliver a verdict — «Нужно ускориться» in warning
+ * yellow, «Опережаете график» in green. The methodology report is specific
+ * about why that is a risk and not a nicety: feedback helps on average, but
+ * roughly 38 % of effects in the classic meta-analysis were NEGATIVE, so the
+ * form of delivery decides as much as the content. The number stays; the
+ * judgement of the person goes, and so does the colour alarm (the call site
+ * renders all three states in the same neutral pill).
+ *
+ * The amount arrives ALREADY formatted (lib/utils/money.ts is the only place
+ * that formats money) — this function knows nothing about bigint or currency.
+ * It lives here, not in the markup, so the wording has one home and a test.
+ */
+export function paceLabel(status: PaceStatus, formattedMonthlyAmount: string): string {
+  const head = `К сроку нужно ~${formattedMonthlyAmount}/мес`;
+  if (status === "behind") return `${head} — это быстрее текущего темпа`;
+  if (status === "ahead") return `${head} — это медленнее текущего темпа`;
+  return `${head} — примерно как сейчас`;
+}

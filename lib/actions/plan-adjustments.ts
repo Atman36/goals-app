@@ -117,8 +117,23 @@ export async function savePlanAdjustment(input: unknown): Promise<SavePlanAdjust
           const item = await getChecklistItemTx(tx, data.goalId, checklistItemId);
           if (!item) throw new PlanAdjustmentRejection("item_not_found");
           if (item.ifThen == null) throw new PlanAdjustmentRejection("no_if_then");
+
+          // Review tail of B4, deliberately deferred there and closed here: a
+          // step created by "add_coping_plan" gets a title DERIVED from its
+          // if-then ("Если … — то …"). Changing only the trigger left that
+          // title quoting the old one, so the goal page showed a heading and
+          // an «если—то» line contradicting each other.
+          //
+          // The title is rewritten only when it is still character-for-
+          // character the derived form — the moment the person has edited it
+          // themselves (or the step was never a coping plan), their words are
+          // theirs and this must not touch them.
+          const derivedTitle = copingPlanTitle(item.ifThen.trigger, item.ifThen.action);
           const updated = await updateChecklistItemTx(tx, data.goalId, checklistItemId, {
             ifThen: { ...item.ifThen, trigger },
+            ...(item.title === derivedTitle
+              ? { title: copingPlanTitle(trigger, item.ifThen.action) }
+              : {}),
           });
           if (!updated) throw new PlanAdjustmentRejection("item_not_found");
           changedStep = true;

@@ -155,6 +155,85 @@ describe("savePlanAdjustment", () => {
     });
   });
 
+  // B4 review tail, closed after B5: a step born from "add_coping_plan" has a
+  // title derived from its if-then, so changing the trigger alone used to leave
+  // the goal page showing a heading that quoted the OLD trigger next to an
+  // «если—то» line with the new one.
+  it("'change_trigger' rewrites a title that is still exactly the derived coping-plan form", async () => {
+    mockLiveLock();
+    getChecklistItemTxMock.mockResolvedValue({
+      id: ITEM_ID,
+      title: "Если накрыло вечером — то написать одному человеку",
+      ifThen: {
+        trigger: "накрыло вечером",
+        action: "написать одному человеку",
+        planType: "relapse_prevention",
+      },
+    } as never);
+    updateChecklistItemTxMock.mockResolvedValue({ id: ITEM_ID } as never);
+
+    const result = await savePlanAdjustment(
+      baseInput({ decision: "change_trigger", checklistItemId: ITEM_ID, trigger: "накрыло утром" }),
+    );
+
+    expect(result).toEqual({ ok: true, duplicate: false, changedStep: true });
+    expect(updateChecklistItemTxMock).toHaveBeenCalledWith(FAKE_TX, GOAL_ID, ITEM_ID, {
+      ifThen: {
+        trigger: "накрыло утром",
+        action: "написать одному человеку",
+        planType: "relapse_prevention",
+      },
+      title: "Если накрыло утром — то написать одному человеку",
+    });
+  });
+
+  it("'change_trigger' leaves a hand-written title alone", async () => {
+    mockLiveLock();
+    getChecklistItemTxMock.mockResolvedValue({
+      id: ITEM_ID,
+      title: "Мой собственный заголовок",
+      ifThen: {
+        trigger: "накрыло вечером",
+        action: "написать одному человеку",
+        planType: "relapse_prevention",
+      },
+    } as never);
+    updateChecklistItemTxMock.mockResolvedValue({ id: ITEM_ID } as never);
+
+    await savePlanAdjustment(
+      baseInput({ decision: "change_trigger", checklistItemId: ITEM_ID, trigger: "накрыло утром" }),
+    );
+
+    // The whole patch — no `title` key at all, so drizzle cannot overwrite it.
+    expect(updateChecklistItemTxMock).toHaveBeenCalledWith(FAKE_TX, GOAL_ID, ITEM_ID, {
+      ifThen: {
+        trigger: "накрыло утром",
+        action: "написать одному человеку",
+        planType: "relapse_prevention",
+      },
+    });
+  });
+
+  it("'change_trigger' recognizes a derived title that had to be truncated to 200 chars", async () => {
+    mockLiveLock();
+    const longAction = "а".repeat(250);
+    const storedTitle = `${`Если старый триггер — то ${longAction}`.slice(0, 199)}…`;
+    getChecklistItemTxMock.mockResolvedValue({
+      id: ITEM_ID,
+      title: storedTitle,
+      ifThen: { trigger: "старый триггер", action: longAction, planType: "relapse_prevention" },
+    } as never);
+    updateChecklistItemTxMock.mockResolvedValue({ id: ITEM_ID } as never);
+
+    await savePlanAdjustment(
+      baseInput({ decision: "change_trigger", checklistItemId: ITEM_ID, trigger: "новый триггер" }),
+    );
+
+    const patch = updateChecklistItemTxMock.mock.calls[0][3] as { title?: string };
+    expect(patch.title).toBe(`${`Если новый триггер — то ${longAction}`.slice(0, 199)}…`);
+    expect(patch.title!.length).toBe(200);
+  });
+
   it("'add_coping_plan' creates a new if_then item with planType relapse_prevention", async () => {
     mockLiveLock();
     insertChecklistItemTxMock.mockResolvedValue({ id: NEW_ITEM_ID } as never);

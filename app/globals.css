@@ -43,6 +43,12 @@
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --color-warn: var(--warn);
+  /* Home redesign H1: the day card's own surface. Registered here as well as
+     declared below — in Tailwind v4 a bare :root variable is NOT a utility, so
+     without these two lines `bg-surface-focus` / `border-surface-focus-ring`
+     silently compile to nothing. */
+  --color-surface-focus: var(--surface-focus);
+  --color-surface-focus-ring: var(--surface-focus-ring);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -96,7 +102,12 @@
   --secondary: rgba(33, 28, 23, 0.08);
   --secondary-foreground: #211C17;
   --muted: rgba(33, 28, 23, 0.05);
-  --muted-foreground: rgba(33, 28, 23, 0.45);
+  /* Home redesign C3. Was 0.45, which measured 2.78:1 over --background and
+     failed AA outright — and the new home leans on this token for load-bearing
+     text (the day's step, sums, step counters). 0.62 measures 4.64:1 over
+     #FBF6EF and 4.65:1 over --surface-focus. The dark theme was already fine
+     (5.71:1) and is left alone. */
+  --muted-foreground: rgba(33, 28, 23, 0.62);
   --accent: rgba(33, 28, 23, 0.05);
   --accent-foreground: #211C17;
   --destructive: #D1663F;
@@ -120,6 +131,10 @@
   --positive: #2F9E5E;
   --negative: #D1663F;
   --warn: #C85536;
+  /* The one surface that is not --card: the day card on the home page. Warm,
+     a shade off the page background, ringed rather than bordered. */
+  --surface-focus: #FFF6F1;
+  --surface-focus-ring: rgba(238, 108, 77, 0.22);
   --gradient-progress: linear-gradient(90deg, #EE6C4D, #F2A65A);
   --gradient-tile: linear-gradient(135deg, #F2A65A, #EE6C4D);
 }
@@ -159,7 +174,13 @@
   --sidebar-ring: #EE6C4D;
   --positive: #2F9E5E;
   --negative: #D1663F;
-  --warn: #C85536;
+  /* Home redesign C4, applied deliberately and globally rather than as a
+     side-effect of the new page: #C85536 on #17130F measured 2.5:1 and was
+     barely distinguishable from the background. #F2A65A measures 9.13:1.
+     This also lightens the «soon» bucket on /goals and any other text-warn. */
+  --warn: #F2A65A;
+  --surface-focus: #2A211B;
+  --surface-focus-ring: rgba(238, 108, 77, 0.28);
   --gradient-progress: linear-gradient(90deg, #EE6C4D, #F2A65A);
   --gradient-tile: linear-gradient(135deg, #F2A65A, #EE6C4D);
 }

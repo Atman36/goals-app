@@ -192,6 +192,7 @@ export async function createGoal(
   log.info({ goalId: goal.id, kind: goal.kind }, "goal created");
 
   revalidatePath("/");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${goal.id}`);
 
   return { ok: true, goalId: goal.id };
@@ -258,6 +259,7 @@ export async function updateGoal(
   const updated = outcome.goal;
   log.info({ goalId: updated.id }, "goal updated");
   revalidatePath("/");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${updated.id}`);
 
   return { ok: true, goalId: updated.id };
@@ -295,7 +297,7 @@ export async function archiveGoal(goalId: string): Promise<SimpleActionResult> {
   }
 
   revalidatePath("/");
-  revalidatePath("/today");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };
@@ -325,7 +327,7 @@ export async function softDeleteGoalAction(goalId: string): Promise<SimpleAction
   log.info({ goalId }, "goal soft-deleted");
 
   revalidatePath("/");
-  revalidatePath("/today");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };
@@ -353,7 +355,7 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
     // Already achieved — idempotent success, and notably achievedAt was left
     // exactly where it was rather than being pushed forward.
     revalidatePath("/");
-    revalidatePath("/today");
+    revalidatePath("/goals");
     revalidatePath(`/goals/${goalId}`);
     return { ok: true };
   }
@@ -380,7 +382,7 @@ export async function markAchieved(goalId: string): Promise<SimpleActionResult> 
   log.info({ goalId, daysToAchieve }, "goal achieved");
 
   revalidatePath("/");
-  revalidatePath("/today");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };

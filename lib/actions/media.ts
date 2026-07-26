@@ -200,7 +200,8 @@ export async function registerMedia(input: RegisterMediaInput): Promise<Register
     revalidatePath(`/goals/${parsed.data.goalId}`);
   }
   revalidatePath("/gallery");
-  revalidatePath("/");
+  // Covers are rendered by the goal cards on /goals, never on the home page.
+  revalidatePath("/goals");
 
   return { ok: true, mediaId: media.id, cover };
 }
@@ -224,7 +225,7 @@ export async function setGoalCover(goalId: string, mediaId: string): Promise<Set
   if (!updated) return { ok: false, error: "Изображение не найдено" };
 
   revalidatePath(`/goals/${parsed.data.goalId}`);
-  revalidatePath("/");
+  revalidatePath("/goals");
 
   return { ok: true };
 }

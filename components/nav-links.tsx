@@ -5,9 +5,12 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
+// «Сегодня» stays in the nav even though it now points at the logo's own href:
+// it is the only thing that highlights the active section, which the logo does
+// not do. The goal list moved to /goals.
 const NAV_ITEMS = [
-  { href: "/", label: "Мои цели" },
-  { href: "/today", label: "Сегодня" },
+  { href: "/", label: "Сегодня" },
+  { href: "/goals", label: "Цели" },
   { href: "/reflections", label: "Неделя" },
   { href: "/review", label: "Обзор" },
   { href: "/gallery", label: "Галерея" },

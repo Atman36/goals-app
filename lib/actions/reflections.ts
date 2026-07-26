@@ -241,7 +241,9 @@ export async function saveReflection(
 
   revalidatePath("/reflections");
   revalidatePath("/review");
-  revalidatePath("/today"); // the global streak may change
+  // The home page shows this week's promise and the rhythm bars, and a saved
+  // reflection is itself an active week.
+  revalidatePath("/");
 
   // Celebrated whatever the outcome, including «Не в этот раз»: what is being
   // marked is that the cycle closed honestly, not that the week went well.

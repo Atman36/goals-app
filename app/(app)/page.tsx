@@ -1,170 +1,265 @@
+import Link from "next/link";
+import { format, parseISO } from "date-fns";
+import { ru } from "date-fns/locale";
+
 import { getCurrentUser } from "@/lib/auth";
-import { getDashboardAggregates, listGoals, type ListGoalsOptions } from "@/lib/db/queries/goals";
-import { calcFinancialProgress, formatMoney } from "@/lib/utils/money";
+import { getFocusGoal } from "@/lib/db/queries/agenda";
+import { listGoals, type GoalWithProgress } from "@/lib/db/queries/goals";
+import { getGlobalConsistency } from "@/lib/db/queries/streaks";
+import { getCheckinForGoalOnDate } from "@/lib/db/queries/checkins";
+import { getLatestReflectionBefore, getReflectionByWeek } from "@/lib/db/queries/reflections";
+import { listChecklistItems } from "@/lib/db/queries/checklist";
+import { getRecentPlanAdjustmentForGoal } from "@/lib/db/queries/plan-adjustments";
+import { todayKey } from "@/lib/utils/date-keys";
+import { weekStartKey } from "@/lib/utils/week-keys";
+import { daysLeftInWeek, promiseCardState } from "@/lib/utils/promise-card";
+import { consistencyBadgeState } from "@/lib/utils/consistency-badge";
+import { toAdjustmentStepOptions } from "@/lib/utils/adjustment-step";
+import { pickTodayStep, todayStepCaption } from "@/lib/utils/today-step";
+import { homeBlocks, orderHomeGoalRows } from "@/lib/utils/home-blocks";
+import { formatMoney } from "@/lib/utils/money";
+import { pluralRu } from "@/lib/utils/plural";
 import type { Currency } from "@/lib/validators/goal";
-import { EmptyState } from "@/components/goals/empty-state";
-import { GoalCard } from "@/components/goals/goal-card";
-import {
-  DashboardControls,
-  type GoalKindFilter,
-  type GoalStatusFilter,
-  type SortOption,
-} from "@/components/goals/dashboard-controls";
-import { Progress } from "@/components/ui/progress";
+import { CheckinCard } from "@/components/goals/checkin-card";
+import { ConsistencyBadge } from "@/components/goals/consistency-badge";
+import { FocusPicker, type FocusPickerGoal } from "@/components/goals/focus-picker";
+import { GoalRow } from "@/components/goals/goal-row";
+import { WeeklyPromiseCard } from "@/components/goals/weekly-promise-card";
+import { Button } from "@/components/ui/button";
 
-const STATUS_VALUES: GoalStatusFilter[] = ["active", "achieved", "archived"];
-const KIND_VALUES: GoalKindFilter[] = ["financial", "non_financial"];
-const CURRENCY_VALUES: Currency[] = ["RUB", "USD"];
-const SORT_VALUES: SortOption[] = ["deadline", "percent", "created"];
+// The home page: день → ритм → путь.
+//
+// It is a COMPOSITION of independent blocks, never a switch over a screen
+// state (B3). The mockup shipped six mutually exclusive states, but in real
+// life they stack: somebody back after three weeks almost certainly has an
+// unclosed promise; a day can be marked while the week is still open. Every
+// condition lives in lib/utils/home-blocks.ts so the combinations the mockup
+// never drew are pinned by tests rather than discovered in production.
+//
+// The goal list, its filters and archive moved to /goals; so did «Шаги» and
+// «Дедлайны» (C5). This page answers «что сегодня», that one «что на подходе».
 
-function parseEnum<T extends string>(value: string | undefined, allowed: readonly T[]): T | undefined {
-  return value !== undefined && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
+/** The subtitle under a goal in the focus picker. Formatted here, on the
+ *  server: the picker is a client component and money is bigint minor units
+ *  end-to-end — it must never cross that boundary as a raw value. */
+function pickerSubtitle(goal: GoalWithProgress): string {
+  const deadline = `срок ${format(parseISO(goal.deadline), "d MMMM", { locale: ru })}`;
+  if (goal.kind === "financial") {
+    const currency = goal.currency as Currency;
+    return `${formatMoney(goal.saved, currency)} из ${formatMoney(goal.targetAmount ?? 0n, currency)} · ${deadline}`;
+  }
+  const steps = pluralRu(goal.checklistTotal, "шага", "шагов", "шагов");
+  return `${goal.checklistDone} из ${goal.checklistTotal} ${steps} · ${deadline}`;
 }
 
-const EMPTY_COPY: Record<GoalStatusFilter, { title: string; description: string }> = {
-  active: {
-    title: "Пока нет ни одной активной цели",
-    description:
-      "Создайте первую цель — с картинкой, суммой (или чек-листом) и сроком, — чтобы начать путь к результату.",
-  },
-  achieved: {
-    title: "Пока нет достигнутых целей",
-    description: "Как только вы отметите цель достигнутой, она появится здесь.",
-  },
-  archived: {
-    title: "В архиве пока пусто",
-    description: "Сюда попадают цели, которые вы решили отложить или больше не преследовать.",
-  },
-};
+const panelClassName =
+  "flex flex-col gap-4 rounded-[18px] border border-border bg-card p-[clamp(16px,1.9vw,22px)]";
 
-interface DashboardSearchParams {
-  status?: string;
-  kind?: string;
-  currency?: string;
-  sort?: string;
-}
-
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<DashboardSearchParams>;
-}) {
+export default async function HomePage() {
   const user = await getCurrentUser();
+  const today = todayKey();
+  const weekStart = weekStartKey(today);
 
-  const sp = await searchParams;
-  const status = parseEnum(sp.status, STATUS_VALUES) ?? "active";
-  const kind = parseEnum(sp.kind, KIND_VALUES);
-  const currency = parseEnum(sp.currency, CURRENCY_VALUES);
-  const sort = parseEnum(sp.sort, SORT_VALUES) ?? "deadline";
+  const [focusGoal, activeGoals, consistency, currentReflection, previousReflection] =
+    await Promise.all([
+      getFocusGoal(user.id),
+      listGoals(user.id, { status: "active", sort: "deadline" }),
+      getGlobalConsistency(user.id),
+      getReflectionByWeek(user.id, weekStart),
+      getLatestReflectionBefore(user.id, weekStart),
+    ]);
 
-  const filterOpts: ListGoalsOptions = { status, kind, currency, sort };
+  const checkin = focusGoal ? await getCheckinForGoalOnDate(user.id, focusGoal.id, today) : null;
+  const [checklistItems, recentAdjustment] = focusGoal
+    ? await Promise.all([
+        listChecklistItems(user.id, focusGoal.id),
+        getRecentPlanAdjustmentForGoal(user.id, focusGoal.id),
+      ])
+    : [[], null];
 
-  const [allGoals, goals, aggregates] = await Promise.all([
-    listGoals(user.id, {}),
-    listGoals(user.id, filterOpts),
-    getDashboardAggregates(user.id),
-  ]);
+  const badge = consistencyBadgeState(consistency);
 
-  const counts: Record<GoalStatusFilter, number> = {
-    active: allGoals.filter((g) => g.status === "active").length,
-    achieved: allGoals.filter((g) => g.status === "achieved").length,
-    archived: allGoals.filter((g) => g.status === "archived").length,
-  };
+  // T6 (PLAN §5 B2): the weekly promise lives here every day, not only on
+  // /reflections. `unclosed-previous` is its own band above the week block —
+  // registering an outcome (including an honest «не в этот раз») is what closes
+  // a cycle, the product's North Star (Decisions #6).
+  const promiseStates = promiseCardState({
+    currentWeek: currentReflection
+      ? {
+          promise: currentReflection.promise,
+          prevOutcome: currentReflection.prevOutcome,
+          goal: currentReflection.promiseGoal,
+        }
+      : null,
+    previousWeek: previousReflection
+      ? {
+          promise: previousReflection.promise,
+          goal: previousReflection.promiseGoal,
+          weekStart: previousReflection.weekStart,
+        }
+      : null,
+    todayKey: today,
+  });
+  const unclosedPrevious = promiseStates.filter((s) => s.kind === "unclosed-previous");
+  const currentPromise = promiseStates.find((s) => s.kind !== "unclosed-previous") ?? null;
 
-  const greetingName = user.name?.trim() || user.email.split("@")[0];
+  const blocks = homeBlocks({
+    hasGoals: activeGoals.length > 0,
+    hasFocusGoal: focusGoal !== null,
+    checkedInToday: checkin !== null,
+    rhythmVisible: badge.visible,
+    returnedAfterGap: badge.returnNote !== null,
+    hasCurrentPromise: currentPromise !== null && currentPromise.kind !== "none",
+    hasUnclosedPromise: unclosedPrevious.length > 0,
+  });
 
-  const rubTarget = aggregates.byCurrency.RUB.target;
-  const usdTarget = aggregates.byCurrency.USD.target;
-  const stepsPercent =
-    aggregates.totalItems > 0 ? Math.round((aggregates.doneItems / aggregates.totalItems) * 100) : 0;
+  const todayStep = focusGoal ? pickTodayStep(checklistItems, focusGoal.kind) : null;
+  const goalRows = orderHomeGoalRows(activeGoals, focusGoal?.id ?? null);
+  const pickerGoals: FocusPickerGoal[] = activeGoals.map((goal) => ({
+    id: goal.id,
+    title: goal.title,
+    subtitle: pickerSubtitle(goal),
+  }));
 
-  const emptyCopy = EMPTY_COPY[status];
+  // C6: the proza, not the markup — «в будни только тихая ссылка "разобрать
+  // неделю", кнопкой она становится с субботы». daysLeftInWeek is 1 on
+  // Saturday and 0 on Sunday.
+  const weekReviewIsPrimary = daysLeftInWeek(today) <= 1;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-1">
-        <p className="text-sm text-muted-foreground">Привет, {greetingName} 👋</p>
-        <h1 className="font-display text-[44px] leading-tight font-bold tracking-tight">
-          Вперёд к целям
-        </h1>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {rubTarget > 0n ? (
-          <StatCard
-            label="Накоплено · ₽"
-            hero={formatMoney(aggregates.byCurrency.RUB.saved, "RUB")}
-            sub={`из ${formatMoney(rubTarget, "RUB")}`}
-            percent={Math.round(calcFinancialProgress(aggregates.byCurrency.RUB.saved, rubTarget) * 100)}
-          />
-        ) : null}
-        {usdTarget > 0n ? (
-          <StatCard
-            label="Накоплено · $"
-            hero={formatMoney(aggregates.byCurrency.USD.saved, "USD")}
-            sub={`из ${formatMoney(usdTarget, "USD")}`}
-            percent={Math.round(calcFinancialProgress(aggregates.byCurrency.USD.saved, usdTarget) * 100)}
-          />
-        ) : null}
-        <StatCard
-          label="Шаги · нефинансовые"
-          hero={`${aggregates.doneItems} из ${aggregates.totalItems}`}
-          sub="пройдено шагов"
-          percent={stepsPercent}
-        />
-      </div>
-
-      <DashboardControls
-        status={status}
-        kind={kind}
-        currency={currency}
-        sort={sort}
-        counts={counts}
-      />
-
-      {goals.length === 0 ? (
-        <EmptyState
-          title={emptyCopy.title}
-          description={emptyCopy.description}
-          actionHref={status === "active" ? "/goals/new" : undefined}
-          actionLabel={status === "active" ? "+ Новая цель" : undefined}
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {/* `goal.status === "active"` matches getFocusGoal's own filter — the
-              raw focus_goal_id column can still point at a goal that has since
-              been archived or achieved, which would light up the badge for a
-              goal /today no longer treats as the focus. */}
-          {goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              isFocus={goal.id === user.focusGoalId && goal.status === "active"}
-            />
-          ))}
+    <div className="flex flex-col gap-[clamp(12px,1.4vw,16px)]">
+      <section className="flex flex-col gap-[clamp(14px,1.4vw,18px)] rounded-[20px] border border-surface-focus-ring bg-surface-focus p-[clamp(18px,2.3vw,28px)]">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1.5 font-mono text-xs text-muted-foreground">
+          <span>{format(parseISO(today), "EEEE, d MMMM", { locale: ru })}</span>
+          {focusGoal ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">цель №1 — {focusGoal.title}</span>
+            </>
+          ) : null}
         </div>
-      )}
-    </div>
-  );
-}
 
-function StatCard({
-  label,
-  hero,
-  sub,
-  percent,
-}: {
-  label: string;
-  hero: string;
-  sub: string;
-  percent: number;
-}) {
-  return (
-    <div className="flex flex-col rounded-[20px] bg-card p-5 ring-1 ring-foreground/8">
-      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-      <span className="mt-2 font-display text-[26px] leading-none font-bold tracking-tight">{hero}</span>
-      <span className="mt-1 text-xs text-muted-foreground">{sub}</span>
-      <Progress value={percent} aria-label={label} className="mt-3" />
+        {/* C2: the neutral return block. No fire, no «ничего не сгорело» — the
+            product has no burning mechanic left to remind anyone of, and saying
+            so at the most vulnerable moment reintroduces the very idea the
+            rolling window removed. Two plain lines instead, measured in weeks
+            because weeks are the only unit the rhythm is measured in (B5). */}
+        {blocks.showReturnBlock && badge.returnNote ? (
+          <div className="flex flex-col gap-1.5 rounded-2xl bg-muted px-4 py-3.5">
+            <span className="text-[14.5px] font-semibold text-foreground text-pretty">
+              {badge.returnNote}
+            </span>
+            {badge.returnFact ? (
+              <span className="text-[13.5px] leading-relaxed text-muted-foreground text-pretty">
+                {badge.returnFact}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {blocks.dayCard === "no-goals" || blocks.dayCard === "pick-focus" ? (
+          <FocusPicker goals={pickerGoals} />
+        ) : focusGoal ? (
+          /* Keyed by the day. A check-in submitted after midnight is rejected
+             as stale (GA-013) and the card offers a refresh; router.refresh()
+             keeps client state, so without this key the new day's card would
+             still hold yesterday's answers and would save them under today the
+             moment the user touched a control. */
+          <CheckinCard
+            key={today}
+            goalId={focusGoal.id}
+            expectedDate={today}
+            initial={
+              checkin
+                ? { outcome: checkin.outcome, feeling: checkin.feeling, note: checkin.note }
+                : null
+            }
+            steps={toAdjustmentStepOptions(checklistItems)}
+            lastAdjustmentAt={recentAdjustment?.createdAt ?? null}
+            stepCaption={todayStepCaption(todayStep)}
+          />
+        ) : null}
+
+        {/* Offered on return only: after a gap, the goal someone left may not be
+            the goal they want to come back to. */}
+        {blocks.showFocusSwitchLine && focusGoal ? (
+          <div className="text-[13px] text-muted-foreground">
+            Цель №1 всё ещё «{focusGoal.title}».{" "}
+            <Link
+              href={`/goals/${focusGoal.id}`}
+              className="font-semibold text-primary hover:underline"
+            >
+              Сменить
+            </Link>
+          </div>
+        ) : null}
+      </section>
+
+      {blocks.showUnclosedPromise
+        ? unclosedPrevious.map((state, i) => (
+            <WeeklyPromiseCard key={`unclosed-${i}`} state={state} />
+          ))
+        : null}
+
+      {blocks.showWeekBlock || blocks.showGoalsBlock ? (
+        <div className="grid items-start gap-[clamp(12px,1.4vw,16px)] md:grid-cols-2">
+          {blocks.showWeekBlock ? (
+            <section className={panelClassName}>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-[15px] font-semibold tracking-tight">Неделя</h2>
+                {weekReviewIsPrimary ? (
+                  <Button
+                    size="sm"
+                    nativeButton={false}
+                    render={<Link href="/reflections">разобрать неделю</Link>}
+                  />
+                ) : (
+                  <Link
+                    href="/reflections"
+                    className="text-[13px] font-semibold text-primary hover:underline"
+                  >
+                    разобрать неделю
+                  </Link>
+                )}
+              </div>
+              {currentPromise ? (
+                <WeeklyPromiseCard state={currentPromise} variant="compact" />
+              ) : null}
+              {blocks.showRhythm ? <ConsistencyBadge state={badge} /> : null}
+            </section>
+          ) : null}
+
+          {blocks.showGoalsBlock ? (
+            <section className={panelClassName}>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-[15px] font-semibold tracking-tight">
+                  Куда это ведёт
+                </h2>
+                <Link
+                  href="/goals"
+                  className="text-[13px] font-semibold text-primary hover:underline"
+                >
+                  все цели
+                </Link>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {goalRows.rows.map((goal) => (
+                  <GoalRow key={goal.id} goal={goal} isFocus={goal.id === focusGoal?.id} />
+                ))}
+              </div>
+              {goalRows.hiddenCount > 0 ? (
+                <span className="text-[13px] text-muted-foreground">
+                  Ещё {goalRows.hiddenCount}{" "}
+                  {pluralRu(goalRows.hiddenCount, "цель", "цели", "целей")} —{" "}
+                  <Link href="/goals" className="font-semibold text-primary hover:underline">
+                    открыть список
+                  </Link>
+                </span>
+              ) : null}
+            </section>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

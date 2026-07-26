@@ -4,6 +4,7 @@ import {
   consistencyBadgeState,
   CONSISTENCY_WINDOW_WEEKS,
   RETURN_NOTE,
+  returnFactLine,
 } from "@/lib/utils/consistency-badge";
 
 // T8 (PLAN §6 C1). The old badge zeroed on the first miss; these tests pin the
@@ -66,5 +67,78 @@ describe("consistencyBadgeState", () => {
     expect(state({ activeWeeks: 2, windowWeeks: CONSISTENCY_WINDOW_WEEKS }).label).toBe(
       "Активность: 2 из 4 последних недель",
     );
+  });
+});
+
+// Home redesign B4/B5/C1/C2. The flame pill became four bars, so the state now
+// carries the actual weeks rather than only a count, and the return after a gap
+// gets a factual second line measured in weeks.
+describe("consistencyBadgeState — the four bars", () => {
+  const window = [
+    { weekStart: "2026-07-06", active: true },
+    { weekStart: "2026-07-13", active: false },
+    { weekStart: "2026-07-20", active: true },
+    { weekStart: "2026-07-27", active: true },
+  ];
+
+  it("passes the weeks through so a filled bar always names a real week", () => {
+    expect(state({ activeWeeks: 3, weeks: window }).weeks).toEqual(window);
+  });
+
+  // Four empty cells read as a scale someone failed to fill — the exact
+  // reproach the rolling window removed. Day zero draws no bars at all.
+  it("drops the bars entirely on day zero, even if weeks were supplied", () => {
+    const result = state({ activeWeeks: 0, weeks: window });
+
+    expect(result.visible).toBe(false);
+    expect(result.weeks).toEqual([]);
+  });
+
+  it("defaults to no bars when the caller supplies none", () => {
+    expect(state({ activeWeeks: 3 }).weeks).toEqual([]);
+  });
+});
+
+describe("consistencyBadgeState — the return line", () => {
+  it("says nothing factual when this week does not follow a gap", () => {
+    expect(state({ returnedAfterGap: false, returnGapWeeks: 3 }).returnFact).toBeNull();
+  });
+
+  it.each([[null], [undefined], [0]])(
+    "says nothing factual when the gap length is %s",
+    (gap) => {
+      expect(state({ returnedAfterGap: true, returnGapWeeks: gap }).returnFact).toBeNull();
+    },
+  );
+
+  it("states the gap in weeks, in exactly the agreed words", () => {
+    expect(state({ returnedAfterGap: true, returnGapWeeks: 2 }).returnFact).toBe(
+      "Вас не было 2 недели. Ритм считается по последним четырём.",
+    );
+  });
+
+  it.each([
+    [1, "неделю"],
+    [2, "недели"],
+    [3, "недели"],
+    [5, "недель"],
+    [11, "недель"],
+    [21, "неделю"],
+  ])("declines the noun correctly for a gap of %i", (gap, noun) => {
+    expect(returnFactLine(gap).startsWith(`Вас не было ${gap} ${noun}.`)).toBe(true);
+  });
+
+  // C2: the mockup's «Ничего не сгорело» was rejected because it reintroduces
+  // a burning mechanic the product does not have — and does it at the most
+  // vulnerable moment, when someone has just come back.
+  it("never mentions burning, in either line", () => {
+    const result = state({ returnedAfterGap: true, returnGapWeeks: 3 });
+
+    for (const line of [result.returnNote, result.returnFact]) {
+      expect(line).not.toBeNull();
+      expect(line).not.toMatch(/сгорел/i);
+      expect(line).not.toMatch(/огон/i);
+    }
+    expect(result.returnNote).toBe(RETURN_NOTE);
   });
 });

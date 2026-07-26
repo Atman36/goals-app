@@ -129,8 +129,10 @@ export default async function GoalPage({
 
   return (
     <div className="flex flex-col gap-8">
-      <Link href="/" className="self-start text-sm text-muted-foreground hover:text-foreground">
-        ← Мои цели
+      {/* The goal list moved to /goals when the home page became the daily
+          loop — "back" from a goal must land on the list, not on today. */}
+      <Link href="/goals" className="self-start text-sm text-muted-foreground hover:text-foreground">
+        ← Все цели
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -185,7 +187,7 @@ export default async function GoalPage({
 
           {/* T8: rolling consistency, no zeroing streak. The return-after-gap
               line is «Сегодня»-only (Decisions #5), so it is not rendered here. */}
-          <ConsistencyBadge state={consistencyBadgeState(consistency)} className="self-start" />
+          <ConsistencyBadge state={consistencyBadgeState(consistency)} className="max-w-xs" />
 
           {isFinancial ? (
             <QuickAddSheet

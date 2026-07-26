@@ -150,10 +150,20 @@ describe("stale-write recovery actually recovers (GA-012, GA-013)", () => {
     expect(page).toContain("key={goal.updatedAt.toISOString()}");
   });
 
-  it("the today page remounts the check-in card when the day changes", () => {
-    const page = source("app/(app)/today/page.tsx");
+  // The daily loop moved from /today to the home page; the GA-013 invariant
+  // moved with it. /today is now a permanentRedirect, so this guard has to
+  // follow the card, not the route it used to live on.
+  it("the home page remounts the check-in card when the day changes", () => {
+    const page = source("app/(app)/page.tsx");
 
     expect(page).toContain("key={today}");
+  });
+
+  it("/today is a redirect and no longer renders the check-in itself", () => {
+    const page = source("app/(app)/today/page.tsx");
+
+    expect(page).toContain("permanentRedirect");
+    expect(page).not.toContain("<CheckinCard");
   });
 });
 

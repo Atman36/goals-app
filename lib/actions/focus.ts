@@ -33,7 +33,7 @@ export async function setFocusGoal(goalId: string): Promise<SimpleActionResult> 
   track({ name: "focus_goal_set", goal_id: goalId, goal_kind: goal.kind });
 
   revalidatePath("/");
-  revalidatePath("/today");
+  revalidatePath("/goals");
   revalidatePath(`/goals/${goalId}`);
 
   return { ok: true };
@@ -48,7 +48,7 @@ export async function clearFocusGoal(): Promise<SimpleActionResult> {
   log.info({ userId: user.id }, "focus goal cleared");
 
   revalidatePath("/");
-  revalidatePath("/today");
+  revalidatePath("/goals");
 
   return { ok: true };
 }

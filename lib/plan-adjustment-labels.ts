@@ -36,8 +36,13 @@ export const DECISION_LABELS: Record<PlanAdjustmentDecision, string> = {
 // T16 FIX-8: the reflection screen already asks "Что помешало или помогло?"
 // as its third question, so the node repeating "Что помешало?" right below it
 // read as the same question twice. The daily surface keeps the short form.
+// Home redesign H3: on the new home the node sits inside the day card, right
+// under an honest «частично», where the two-word «Что помешало?» read as an
+// interrogation. The longer form asks about the day, not about the person —
+// and it is the wording the design brief settled on. The reflection surface
+// keeps its own phrasing (FIX-8 above).
 export const ADJUSTMENT_BARRIER_HEADING: Record<PlanAdjustmentSource, string> = {
-  checkin: "Что помешало?",
+  checkin: "Что сегодня получилось не так, как ты ожидал?",
   reflection: "Что помешало прошлому обещанию?",
 };
 export const ADJUSTMENT_BARRIER_HINT =

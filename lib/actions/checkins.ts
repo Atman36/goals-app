@@ -77,7 +77,6 @@ export async function saveCheckin(input: unknown): Promise<CheckinActionResult> 
   });
 
   revalidatePath("/");
-  revalidatePath("/today");
   revalidatePath(`/goals/${parsed.data.goalId}`);
 
   return { ok: true };

@@ -19,7 +19,22 @@ const WEEK_HREF = "/reflections";
 const cardLinkClassName =
   "flex flex-col gap-1 rounded-xl bg-card px-4 py-4 text-sm ring-1 ring-foreground/8 transition-colors hover:bg-muted";
 
-export function WeeklyPromiseCard({ state }: { state: PromiseCardState }) {
+/**
+ * `card` — the standalone, tappable card the promise had on /today.
+ * `compact` — a quiet line inside the home page's «Неделя» block, which
+ * already carries its own «разобрать неделю» link, so a second full-width link
+ * around the promise would be two doors to the same room.
+ *
+ * `unclosed-previous` ignores the variant: closing last week's cycle is the
+ * product's North Star and keeps its own block wherever it appears.
+ */
+export function WeeklyPromiseCard({
+  state,
+  variant = "card",
+}: {
+  state: PromiseCardState;
+  variant?: "card" | "compact";
+}) {
   if (state.kind === "unclosed-previous") {
     return (
       <Card>
@@ -54,6 +69,19 @@ export function WeeklyPromiseCard({ state }: { state: PromiseCardState }) {
   }
 
   if (state.kind === "none") {
+    if (variant === "compact") {
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">обещание недели</span>
+          <span className="text-[14.5px] text-muted-foreground text-pretty">
+            На эту неделю не задано.{" "}
+            <Link href={WEEK_HREF} className="font-semibold text-primary hover:underline">
+              Открыть неделю
+            </Link>
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <span>Обещание на эту неделю не задано</span>
@@ -67,6 +95,26 @@ export function WeeklyPromiseCard({ state }: { state: PromiseCardState }) {
   // `current` and `no-goal-link` differ only in the goal line: a promise whose
   // goal was deleted keeps its own text, it just has nothing left to name.
   const goalLine = state.kind === "current" ? state.goalTitle : "цель удалена";
+
+  if (variant === "compact") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="truncate text-xs text-muted-foreground">
+          обещание недели{goalLine ? ` · ${goalLine}` : ""}
+        </span>
+        {/* No colour, no weight change as the week runs out (Decisions #7) —
+            the promise «висит спокойной строкой» whether it is Monday or
+            Saturday. What changes on Saturday is the block's own «разобрать
+            неделю» control, not this line. */}
+        <span className="text-[15.5px] leading-snug font-bold text-foreground text-pretty">
+          {state.promise}
+        </span>
+        <span className="text-[12.5px] text-muted-foreground">
+          {state.daysLeft === 0 ? "последний день недели" : `до конца недели ${state.daysLeft} дн.`}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <Link href={WEEK_HREF} className={cardLinkClassName}>

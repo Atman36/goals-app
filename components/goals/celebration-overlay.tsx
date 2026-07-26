@@ -87,7 +87,7 @@ export function CelebrationOverlay({
             size="lg"
             className="flex-1"
             nativeButton={false}
-            render={<Link href="/">На дашборд</Link>}
+            render={<Link href="/goals">К целям</Link>}
           />
           <Button
             size="lg"

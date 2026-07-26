@@ -7,11 +7,22 @@ import { CONSISTENCY_WINDOW_WEEKS } from "@/lib/utils/consistency-badge";
 import { weekStartKey } from "@/lib/utils/week-keys";
 
 /** What the badge needs: how many of the last M weeks were active, and whether
- *  this week follows a gap (T8 / PLAN §6 C1 — no zeroing streak any more). */
+ *  this week follows a gap (T8 / PLAN §6 C1 — no zeroing streak any more).
+ *
+ *  `weeks` and `returnGapWeeks` were added for the home redesign (B4, B5). The
+ *  pill only ever needed the count; the four bars that replace it need to know
+ *  WHICH weeks were active, and the return line needs the length of the gap
+ *  that was just closed. Both were already inside `toConsistency` — no extra
+ *  query, and deliberately no new "days since last activity" query either: the
+ *  whole rhythm is measured in weeks, so the return is worded in weeks too. */
 export type Consistency = {
   activeWeeks: number;
   windowWeeks: number;
   returnedAfterGap: boolean;
+  /** The rolling window, oldest first — one entry per bar. */
+  weeks: { weekStart: string; active: boolean }[];
+  /** How many weeks the gap ran for, when this week is a return; else null. */
+  returnGapWeeks: number | null;
 };
 
 /**
@@ -90,10 +101,13 @@ function toConsistency(activeWeeks: Set<string>): Consistency {
   const { active: activeCount, window: windowSize } = rollingConsistency(active, window);
   const currentWeek = window[window.length - 1];
   const { returns } = gapsAndReturns(active, window);
+  const currentReturn = returns.find((r) => r.weekStart === currentWeek) ?? null;
   return {
     activeWeeks: activeCount,
     windowWeeks: windowSize,
-    returnedAfterGap: returns.some((r) => r.weekStart === currentWeek),
+    returnedAfterGap: currentReturn !== null,
+    weeks: window.map((weekStart) => ({ weekStart, active: activeWeeks.has(weekStart) })),
+    returnGapWeeks: currentReturn?.gapWeeks ?? null,
   };
 }
 

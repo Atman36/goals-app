@@ -178,7 +178,9 @@ export async function savePlanAdjustment(input: unknown): Promise<SavePlanAdjust
   });
 
   revalidatePath("/");
-  revalidatePath("/today");
+  // A "smaller step" or "change trigger" decision rewrites a checklist item,
+  // which the goal list renders in its «Шаги» block and its step counter.
+  revalidatePath("/goals");
   revalidatePath("/reflections");
   revalidatePath(`/goals/${data.goalId}`);
 

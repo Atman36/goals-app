@@ -175,9 +175,13 @@
   --positive: #2F9E5E;
   --negative: #D1663F;
   /* Home redesign C4, applied deliberately and globally rather than as a
-     side-effect of the new page: #C85536 on #17130F measured 2.5:1 and was
-     barely distinguishable from the background. #F2A65A measures 9.13:1.
-     This also lightens the «soon» bucket on /goals and any other text-warn. */
+     side-effect of the new page: #C85536 on #17130F measures ≈4.2:1, and only
+     ≈3.8:1 on --card and ≈3.4:1 on its own bg-warn/12 badge fill — all below
+     the 4.5:1 AA floor. #F2A65A measures ≈9.3:1 on the page background.
+     Every usage of this token is text-warn or a 12% tint — there is no
+     bg-warn + light-foreground pairing anywhere — so lightening it cannot
+     invert any existing contrast. This also lightens the «soon» bucket on
+     /goals and the «частично» dot on the day card. */
   --warn: #F2A65A;
   --surface-focus: #2A211B;
   --surface-focus-ring: rgba(238, 108, 77, 0.28);

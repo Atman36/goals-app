@@ -136,10 +136,16 @@ export function CheckinCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // NOT cleared here: `isStale`. It used to be, and that quietly undid GA-013's
+  // recovery offer — after a midnight-crossing refusal, touching the note (the
+  // natural reaction to "the day changed") erased both the message and the
+  // «Обновить страницу» button and re-enabled Save, leaving no sign anything
+  // was wrong. Staleness is a fact about the render, not feedback about the
+  // last keystroke: only a remount (the page keys this card by the day) clears
+  // it.
   function clearFeedback() {
     setSaved(false);
     setError(undefined);
-    setIsStale(false);
   }
 
   function handleOutcome(value: CheckinOutcome) {
@@ -179,7 +185,16 @@ export function CheckinCard({
         setSaved(true);
         setRecorded({ outcome, feeling, note });
         setEditing(false);
-        setShowAdjustment(
+        // T16 FIX-1, second door. This used to ASSIGN the recomputed value,
+        // which could flip true → false and unmount a node that was already
+        // showing its result: answer the node on a «частично» day, then fix the
+        // feeling and re-save — `savePlanAdjustment` has meanwhile refreshed
+        // `lastAdjustmentAt` to now, the 72-hour cooldown returns false, and the
+        // confirmation vanishes as if nothing had been recorded. That is the
+        // exact failure FIX-1 was filed against, reached from the other side.
+        // The node can only ever be turned ON here.
+        setShowAdjustment((shown) =>
+          shown ||
           shouldShowAdjustmentNode({
             outcome,
             prompted: shouldPromptAdjustment({
@@ -318,13 +333,17 @@ export function CheckinCard({
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex min-w-0 flex-col gap-2">
               <span className="text-[13px] text-muted-foreground">сегодня отмечено</span>
-              <span className="flex items-center gap-3 font-display text-[clamp(22px,2.7vw,30px)] leading-[1.1] font-bold tracking-tight">
+              {/* An <h1>, not a <span>: on any day the person has already
+                  checked in — the majority of visits, by design — this is the
+                  page's only heading, and «Неделя»/«Куда это ведёт» below are
+                  <h2>s that would otherwise sit under nothing. */}
+              <h1 className="flex items-center gap-3 font-display text-[clamp(22px,2.7vw,30px)] leading-[1.1] font-bold tracking-tight">
                 <span
                   aria-hidden
                   className={cn("size-3 shrink-0 rounded-full", OUTCOME_DOT[recorded.outcome])}
                 />
                 {OUTCOME_LABELS[recorded.outcome]} · {FEELING_LABELS[recorded.feeling].toLowerCase()}
-              </span>
+              </h1>
             </div>
             <button
               type="button"
@@ -364,11 +383,12 @@ export function CheckinCard({
           Обновить страницу
         </Button>
       ) : null}
-      {saved ? (
-        <p role="status" className="sr-only">
-          Сохранено
-        </p>
-      ) : null}
+      {/* Permanently mounted, text swapped — a live region inserted at the same
+          moment as its content is frequently not announced at all. The sighted
+          confirmation is the card flipping to the recorded view. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {saved ? "Отметка сохранена" : ""}
+      </p>
 
       {/* T16 FIX-1: the node is NOT dismissed when it saves, and it is mounted
           OUTSIDE the view/edit branch above so that switching back to the

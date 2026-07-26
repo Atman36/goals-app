@@ -41,8 +41,13 @@ export const DECISION_LABELS: Record<PlanAdjustmentDecision, string> = {
 // interrogation. The longer form asks about the day, not about the person —
 // and it is the wording the design brief settled on. The reflection surface
 // keeps its own phrasing (FIX-8 above).
+// Register: «вы». The design brief wrote this line as «…как ты ожидал?», which
+// would have been the ONLY «ты» string in the product — and it sits ~200px from
+// «Вернулись после перерыва», «Вас не было…» and «Заметка — только для вас», all
+// on the same card. Two registers that close together read as a bug, so the
+// wording is kept and the pronoun is not.
 export const ADJUSTMENT_BARRIER_HEADING: Record<PlanAdjustmentSource, string> = {
-  checkin: "Что сегодня получилось не так, как ты ожидал?",
+  checkin: "Что сегодня получилось не так, как вы ожидали?",
   reflection: "Что помешало прошлому обещанию?",
 };
 export const ADJUSTMENT_BARRIER_HINT =

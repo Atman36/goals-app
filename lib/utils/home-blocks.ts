@@ -81,7 +81,13 @@ export function homeBlocks(input: HomeBlocksInput): HomeBlocks {
     // itself an active week), so the block collapses to nothing and is dropped
     // whole rather than drawn as four empty cells.
     showWeekBlock: input.hasGoals && (input.rhythmVisible || input.hasCurrentPromise),
-    showRhythm: input.rhythmVisible,
+    // Gated on hasGoals too, or the two fields disagree: archive your last
+    // active goal and the week still counts as active (getGlobalConsistency
+    // reads goals of ANY status), so rhythmVisible stays true while the block
+    // that would contain the bars is gone. Every field here means "this is on
+    // screen"; a field that means "it would be, if its parent were" is a
+    // contract someone will eventually read wrong.
+    showRhythm: input.hasGoals && input.rhythmVisible,
     showGoalsBlock: input.hasGoals,
   };
 }

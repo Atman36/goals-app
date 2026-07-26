@@ -116,6 +116,10 @@ describe("homeBlocks — day zero and the empty product (C1, B6)", () => {
     expect(result.showWeekBlock).toBe(false);
     expect(result.showGoalsBlock).toBe(false);
     expect(result.showReturnBlock).toBe(false);
+    // Every field means "this is on screen". Archiving the last active goal
+    // leaves the week itself active, so rhythmVisible stays true — but there is
+    // no block left to draw the bars in.
+    expect(result.showRhythm).toBe(false);
   });
 
   it("draws the goals block whenever there are goals", () => {

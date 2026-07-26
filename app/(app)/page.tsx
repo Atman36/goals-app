@@ -145,7 +145,11 @@ export default async function HomePage() {
             rolling window removed. Two plain lines instead, measured in weeks
             because weeks are the only unit the rhythm is measured in (B5). */}
         {blocks.showReturnBlock && badge.returnNote ? (
-          <div className="flex flex-col gap-1.5 rounded-2xl bg-muted px-4 py-3.5">
+          /* bg-card, not bg-muted: muted-foreground over a 5% tint of the focus
+             surface composites to 4.47:1, just under AA — and this is the very
+             sentence C3 raised the token to make readable. On --card it is
+             4.78:1 light and 5.55:1 dark, and it matches the note box below. */
+          <div className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card px-4 py-3.5">
             <span className="text-[14.5px] font-semibold text-foreground text-pretty">
               {badge.returnNote}
             </span>
@@ -185,10 +189,10 @@ export default async function HomePage() {
         {blocks.showFocusSwitchLine && focusGoal ? (
           <div className="text-[13px] text-muted-foreground">
             Цель №1 всё ещё «{focusGoal.title}».{" "}
-            <Link
-              href={`/goals/${focusGoal.id}`}
-              className="font-semibold text-primary hover:underline"
-            >
+            {/* /goals, not this goal's own page: FocusToggle there only offers
+                «Снять фокус», so the current goal is the one place you cannot
+                switch FROM. Switching means picking another goal. */}
+            <Link href="/goals" className="font-semibold text-primary hover:underline">
               Сменить
             </Link>
           </div>

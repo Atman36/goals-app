@@ -47,10 +47,34 @@ export type ConsistencyBadgeInput = {
 
 /** «Вас не было 2 недели. Ритм считается по последним четырём.» — plain fact,
  *  no metaphor. The second sentence is what makes the first one safe to read:
- *  it says the window is rolling, so the gap took nothing away. */
-export function returnFactLine(gapWeeks: number): string {
+ *  it says the window is rolling, so the gap took nothing away.
+ *
+ *  THE GAP IS A LOWER BOUND, NOT A MEASUREMENT. `gapWeeks` comes from
+ *  `gapsAndReturns`, whose scan never leaves `windowWeekStarts` — so with a
+ *  four-week window it can only ever be 1, 2 or 3. Someone who has not opened
+ *  the app since April returns with `gapWeeks === 3`. Stating «Вас не было
+ *  3 недели» to them is false, and false in the worst possible place: this
+ *  copy exists precisely to earn trust by being plain and factual, and it is
+ *  read at the moment a person is most likely to give up.
+ *
+ *  So a gap that fills the entire observable history before this week is
+ *  worded as the bound it actually is. Measuring the true gap would need a
+ *  `max(week_start)` query across the activity tables, which PLAN B5
+ *  deliberately declined — the whole rhythm is measured in weeks, and one
+ *  sentence does not justify a new query. Being honest about the bound costs
+ *  nothing and keeps that decision intact. */
+export function returnFactLine(
+  gapWeeks: number,
+  windowWeeks: number = CONSISTENCY_WINDOW_WEEKS,
+): string {
   const weeksWord = pluralRu(gapWeeks, "неделю", "недели", "недель");
-  return `Вас не было ${gapWeeks} ${weeksWord}. Ритм считается по последним четырём.`;
+  // The current week occupies the last slot, so the longest run of missed
+  // weeks the window can observe before it is windowWeeks - 1.
+  const isLowerBound = gapWeeks >= windowWeeks - 1;
+  const howLong = isLowerBound
+    ? `${gapWeeks} ${weeksWord} или дольше`
+    : `${gapWeeks} ${weeksWord}`;
+  return `Вас не было ${howLong}. Ритм считается по последним четырём.`;
 }
 
 export function consistencyBadgeState(input: ConsistencyBadgeInput): ConsistencyBadgeState {
@@ -67,6 +91,9 @@ export function consistencyBadgeState(input: ConsistencyBadgeInput): Consistency
     label: `Активность: ${input.activeWeeks} из ${input.windowWeeks} последних ${weeksWord}`,
     returnNote: input.returnedAfterGap ? RETURN_NOTE : null,
     weeks: visible ? (input.weeks ?? []) : [],
-    returnFact: input.returnedAfterGap && gap !== null && gap > 0 ? returnFactLine(gap) : null,
+    returnFact:
+      input.returnedAfterGap && gap !== null && gap > 0
+        ? returnFactLine(gap, input.windowWeeks)
+        : null,
   };
 }

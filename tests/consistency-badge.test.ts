@@ -111,12 +111,41 @@ describe("consistencyBadgeState — the return line", () => {
     },
   );
 
-  it("states the gap in weeks, in exactly the agreed words", () => {
+  it("states a gap the window can actually measure as an exact number", () => {
     expect(state({ returnedAfterGap: true, returnGapWeeks: 2 }).returnFact).toBe(
       "Вас не было 2 недели. Ритм считается по последним четырём.",
     );
   });
 
+  // The gap scan never leaves the four-week window (lib/metrics/definitions.ts
+  // `gapsAndReturns`), so gapWeeks is structurally capped at 3 — a three-MONTH
+  // absence arrives here as 3. Printing «Вас не было 3 недели» would be a plain
+  // false statement, in the one piece of copy whose entire job is to be plainly
+  // factual, read at the moment a person is most likely to give up.
+  it("states a window-saturated gap as a lower bound, never as a measurement", () => {
+    expect(state({ returnedAfterGap: true, returnGapWeeks: 3, windowWeeks: 4 }).returnFact).toBe(
+      "Вас не было 3 недели или дольше. Ритм считается по последним четырём.",
+    );
+  });
+
+  it("does not hedge a gap that is strictly inside the window", () => {
+    for (const gap of [1, 2]) {
+      expect(state({ returnedAfterGap: true, returnGapWeeks: gap, windowWeeks: 4 }).returnFact).not.toContain(
+        "или дольше",
+      );
+    }
+  });
+
+  it("moves the lower-bound boundary with the window size", () => {
+    // Widen the window and 3 stops being the cap, so it stops being hedged.
+    expect(returnFactLine(3, 8)).toBe("Вас не было 3 недели. Ритм считается по последним четырём.");
+    expect(returnFactLine(7, 8)).toContain("7 недель или дольше");
+  });
+
+  // Only gaps of 1–3 are reachable with the current window. The other sizes are
+  // pinned anyway, on the same reasoning as the window-declension test above:
+  // the day someone widens the window, a wrong ending should fail here rather
+  // than ship. A window is passed explicitly so these stay un-hedged.
   it.each([
     [1, "неделю"],
     [2, "недели"],
@@ -125,7 +154,7 @@ describe("consistencyBadgeState — the return line", () => {
     [11, "недель"],
     [21, "неделю"],
   ])("declines the noun correctly for a gap of %i", (gap, noun) => {
-    expect(returnFactLine(gap).startsWith(`Вас не было ${gap} ${noun}.`)).toBe(true);
+    expect(returnFactLine(gap, gap + 2).startsWith(`Вас не было ${gap} ${noun}.`)).toBe(true);
   });
 
   // C2: the mockup's «Ничего не сгорело» was rejected because it reintroduces

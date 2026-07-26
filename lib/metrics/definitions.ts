@@ -182,6 +182,30 @@ export function gapsAndReturns(
   return { missed, returns };
 }
 
+/** Period-level view of the same rhythm `gapsAndReturns` describes per week
+ *  (PLAN §5 B5): how many window weeks had no activity, how many weeks were a
+ *  return after a gap, and the longest gap that was actually followed by a
+ *  return.
+ *
+ *  `longestReturnGap` is the "время возврата" of DECISION-RULE.md §4 point 5
+ *  ("сократилось время возврата после пропуска") — it counts only gaps the
+ *  person came back from, never the open gap someone is still inside, which
+ *  would make the number grow while nothing was happening. It is 0 when there
+ *  were no returns, which reads as "нечего сравнивать", not as "мгновенный
+ *  возврат" — the page and the snapshot both show `returns` next to it so the
+ *  two cases can be told apart. */
+export function returnRhythm(
+  activeWeekStarts: string[],
+  windowWeekStarts: string[],
+): { missedWeeks: number; returns: number; longestReturnGap: number } {
+  const { missed, returns } = gapsAndReturns(activeWeekStarts, windowWeekStarts);
+  return {
+    missedWeeks: missed.length,
+    returns: returns.length,
+    longestReturnGap: returns.reduce((max, r) => Math.max(max, r.gapWeeks), 0),
+  };
+}
+
 /** "N of the last M weeks" — replaces a zeroable streak with a rolling
  *  count. Consumer arrives in task C1. */
 export function rollingConsistency(
@@ -279,6 +303,9 @@ export const METRIC_KEYS = [
   "promises_total",
   "rolling_consistency_active",
   "rolling_consistency_window",
+  "weeks_missed",
+  "returns_after_gap",
+  "return_gap_weeks_max",
   "plan_adjustment_keep",
   "plan_adjustment_smaller",
   "plan_adjustment_change_trigger",

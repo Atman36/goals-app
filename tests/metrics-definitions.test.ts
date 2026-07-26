@@ -4,6 +4,7 @@ import {
   completedCycles,
   checkinCoverage,
   gapsAndReturns,
+  returnRhythm,
   feelingByOutcome,
   orphanPromises,
   ifThenCoverage,
@@ -82,6 +83,70 @@ describe("gapsAndReturns", () => {
     const active = ["2026-06-15"];
     const result = gapsAndReturns(active, window);
     expect(result.returns).toEqual([]);
+  });
+});
+
+// B5 (PLAN §5 B5): the period-level numbers behind the «Возвраты после
+// перерыва» line and the three new snapshot keys. Point 5 of DECISION-RULE.md
+// §4 is read from these, so "0" must never be able to mean two different
+// things by accident.
+describe("returnRhythm", () => {
+  const WINDOW = ["2026-06-01", "2026-06-08", "2026-06-15", "2026-06-22", "2026-06-29"];
+
+  it("counts missed weeks, returns, and the longest gap that was returned from", () => {
+    // active, missed, missed, active (return after 2), active
+    const active = ["2026-06-01", "2026-06-22", "2026-06-29"];
+    expect(returnRhythm(active, WINDOW)).toEqual({
+      missedWeeks: 2,
+      returns: 1,
+      longestReturnGap: 2,
+    });
+  });
+
+  it("reports the LONGEST returned-from gap across two returns, not the last one", () => {
+    const window = [
+      "2026-04-27", // active
+      "2026-05-04", // missed
+      "2026-05-11", // active — return after 1
+      "2026-05-18", // missed
+      "2026-05-25", // missed
+      "2026-06-01", // active — return after 2
+      "2026-06-08", // active
+    ];
+    const active = ["2026-04-27", "2026-05-11", "2026-06-01", "2026-06-08"];
+    expect(returnRhythm(active, window)).toEqual({
+      missedWeeks: 3,
+      returns: 2,
+      longestReturnGap: 2,
+    });
+  });
+
+  it("stays at zero returns while the person is still inside an open gap", () => {
+    // The gap the person has NOT come back from must not be counted as a
+    // return time — otherwise «время возврата» would grow while nothing at
+    // all was happening, and criterion 5 would read as improvement in reverse.
+    const active = ["2026-06-01", "2026-06-08"];
+    expect(returnRhythm(active, WINDOW)).toEqual({
+      missedWeeks: 3,
+      returns: 0,
+      longestReturnGap: 0,
+    });
+  });
+
+  it("is all zeros for a window with no gaps at all", () => {
+    expect(returnRhythm(WINDOW, WINDOW)).toEqual({
+      missedWeeks: 0,
+      returns: 0,
+      longestReturnGap: 0,
+    });
+  });
+
+  it("counts every window week as missed when there was no activity", () => {
+    expect(returnRhythm([], WINDOW)).toEqual({
+      missedWeeks: 5,
+      returns: 0,
+      longestReturnGap: 0,
+    });
   });
 });
 

@@ -11,6 +11,7 @@ import {
   checkinOutcomeMix,
   feelingByOutcome,
   gapsAndReturns,
+  returnRhythm,
   rollingConsistency,
   ifThenCoverage,
   orphanPromises,
@@ -19,6 +20,7 @@ import {
 import { weekStartKey } from "@/lib/utils/week-keys";
 import { todayKey } from "@/lib/utils/date-keys";
 import { OUTCOME_LABELS } from "@/lib/checkin-labels";
+import { gapCellLabel, returnRhythmSummary } from "@/lib/utils/return-rhythm-labels";
 import { EmptyState } from "@/components/goals/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +66,7 @@ export default async function MetricsPage() {
   const coverage = checkinCoverage(data.checkins, weekStarts, today);
   const feeling = feelingByOutcome(data.checkins);
   const gaps = gapsAndReturns(activeList, weekStarts);
+  const rhythmSummary = returnRhythmSummary(returnRhythm(activeList, weekStarts));
   const consistency = rollingConsistency(activeList, weekStarts);
   const ifThen = ifThenCoverage(data.checklistItems);
   const orphans = orphanPromises(data.reflections);
@@ -120,10 +123,10 @@ export default async function MetricsPage() {
                   const weekCheckins = data.checkins.filter((c) => weekStartKey(c.date) === weekStart);
                   const mix = checkinOutcomeMix(weekCheckins);
                   const cov = coverageByWeek.get(weekStart);
-                  const gapWeeks = returnGapByWeek.get(weekStart);
-                  let gapCell = "—";
-                  if (missedSet.has(weekStart)) gapCell = "пропуск";
-                  else if (gapWeeks !== undefined) gapCell = `возврат после ${gapWeeks}`;
+                  const gapCell = gapCellLabel({
+                    missed: missedSet.has(weekStart),
+                    returnGapWeeks: returnGapByWeek.get(weekStart),
+                  });
 
                   return (
                     <tr key={weekStart} className="border-b border-border last:border-0">
@@ -215,6 +218,16 @@ export default async function MetricsPage() {
                 <span className="text-sm font-medium text-foreground">
                   Активность: {consistency.active} из последних {consistency.window} недель
                 </span>
+              </div>
+
+              {/* B5: возврат после пропуска — отдельное событие, а не дыра в
+                  счётчике. Строка нейтральная: ни похвалы за возврат, ни укора
+                  за пропуск — оба числа стоят рядом как факты. Признак №5
+                  правила решения (DECISION-RULE.md §4) читается отсюда и из
+                  того же набора чисел в замороженном срезе. */}
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-foreground">{rhythmSummary.headline}</span>
+                <span className="text-xs text-muted-foreground">{rhythmSummary.hint}</span>
               </div>
 
               <div className="flex flex-col gap-1">

@@ -35,8 +35,8 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 
-// --- Contract with lib/metrics/definitions.ts (task T2, extended T15) ------
-// Same 27 keys, same order — tests/metrics-snapshot.test.ts fails the build
+// --- Contract with lib/metrics/definitions.ts (task T2, extended T15/B5) ---
+// Same 30 keys, same order — tests/metrics-snapshot.test.ts fails the build
 // the moment these two lists disagree as sets.
 export const SNAPSHOT_KEYS = [
   "completed_cycles",
@@ -59,6 +59,9 @@ export const SNAPSHOT_KEYS = [
   "promises_total",
   "rolling_consistency_active",
   "rolling_consistency_window",
+  "weeks_missed",
+  "returns_after_gap",
+  "return_gap_weeks_max",
   "plan_adjustment_keep",
   "plan_adjustment_smaller",
   "plan_adjustment_change_trigger",
@@ -132,6 +135,31 @@ function isMonday(key) {
   return toDateKeyUTC(date) === key && date.getUTCDay() === 1;
 }
 
+// --- Local re-implementation of lib/metrics/definitions.ts's gapsAndReturns --
+// Same reason as the date helpers above: this .mjs cannot import the aliased
+// .ts module. Unlike those helpers, this one is not merely "kept equivalent by
+// review" — tests/metrics-snapshot.test.ts runs both implementations over the
+// same fixtures and fails if they ever disagree, because a snapshot that
+// counted returns differently from the page would be a silent lie in exactly
+// the number DECISION-RULE.md §4 point 5 is read from.
+
+/** Missed weeks and returns-after-a-gap within `windowWeekStarts`. Mirror of
+ *  `gapsAndReturns` in lib/metrics/definitions.ts — change both together. */
+export function gapsAndReturns(activeWeekStarts, windowWeekStarts) {
+  const activeSet = new Set(activeWeekStarts);
+  const missed = windowWeekStarts.filter((w) => !activeSet.has(w));
+
+  const returns = [];
+  for (let i = 1; i < windowWeekStarts.length; i++) {
+    const week = windowWeekStarts[i];
+    if (!activeSet.has(week)) continue;
+    let gapWeeks = 0;
+    for (let j = i - 1; j >= 0 && !activeSet.has(windowWeekStarts[j]); j--) gapWeeks += 1;
+    if (gapWeeks > 0) returns.push({ weekStart: week, gapWeeks });
+  }
+  return { missed, returns };
+}
+
 /** ISO-8601 week-year and week-number for a Monday-anchored date key
  *  (standard "Thursday of this week decides the ISO year" algorithm). */
 function isoWeek(mondayKey) {
@@ -149,8 +177,9 @@ const WINDOW_WEEKS = 8;
 // Version of THIS snapshot file's own JSON shape — bump only if the shape
 // (not the numbers) changes, so an old frozen file can be told apart from a
 // new one at restore/read time. Bumped to "2" in T15: added the seven
-// plan_adjustment_* keys.
-const SCHEMA_VERSION = "2";
+// plan_adjustment_* keys. Bumped to "3" in B5: added weeks_missed,
+// returns_after_gap and return_gap_weeks_max.
+const SCHEMA_VERSION = "3";
 
 function fail(message) {
   console.error(`metrics-snapshot: ${message}`);
@@ -282,10 +311,16 @@ async function main() {
           AND c.date >= ${windowStart}::date AND c.date < ${windowEnd}::date
       `;
 
-      // Active weeks (check-in OR reflection) for rollingConsistency — the
-      // union is deduplicated by week_start via UNION (not UNION ALL).
-      const [activeRow] = await tx`
-        SELECT COUNT(DISTINCT week_start)::int AS active_weeks
+      // Active weeks (check-in OR reflection) for rollingConsistency and, from
+      // B5 on, for the missed/return counts too — hence the LIST of week
+      // starts rather than a bare COUNT: gapsAndReturns needs to know WHICH
+      // weeks were active, not how many. Cast to text so postgres.js hands
+      // back "YYYY-MM-DD" strings that compare directly against the
+      // Monday-anchored keys in `weekStarts` (a date column would arrive as a
+      // Date object and never match). The union is deduplicated by week_start
+      // via UNION (not UNION ALL).
+      const activeWeekRows = await tx`
+        SELECT DISTINCT week_start::text AS week_start
         FROM (
           SELECT date_trunc('week', c.date)::date AS week_start
           FROM checkins c
@@ -337,7 +372,7 @@ async function main() {
           AND pa.source_date >= ${windowStart}::date AND pa.source_date < ${windowEnd}::date
       `;
 
-      return { reflectionRow, checkinRow, activeRow, checklistRow, planAdjustmentRow };
+      return { reflectionRow, checkinRow, activeWeekRows, checklistRow, planAdjustmentRow };
     });
   } catch (error) {
     // Captured rather than re-thrown so the connection still closes below —
@@ -348,7 +383,15 @@ async function main() {
   }
   if (readError) fail(readError instanceof Error ? readError.message : String(readError));
 
-  const { reflectionRow, checkinRow, activeRow, checklistRow, planAdjustmentRow } = metrics;
+  const { reflectionRow, checkinRow, activeWeekRows, checklistRow, planAdjustmentRow } = metrics;
+
+  // B5: the same three numbers the page's «Возвраты после перерыва» line shows
+  // (app/(app)/metrics/page.tsx via returnRhythm), computed over the identical
+  // window. `date_trunc('week', …)` is Monday-anchored like weekStartKey, so a
+  // row's week key lands on the same Monday the window lists.
+  const activeWeekStarts = activeWeekRows.map((r) => r.week_start);
+  const { missed, returns } = gapsAndReturns(activeWeekStarts, weekStarts);
+  const returnGapWeeksMax = returns.reduce((max, r) => Math.max(max, r.gapWeeks), 0);
 
   const checkinCoverageWindowDays = WINDOW_WEEKS * 7;
   const promisesTotal = reflectionRow.orphan_promises + reflectionRow.promises_with_goal;
@@ -379,8 +422,11 @@ async function main() {
     orphan_promises: reflectionRow.orphan_promises,
     promises_with_goal: reflectionRow.promises_with_goal,
     promises_total: promisesTotal,
-    rolling_consistency_active: activeRow.active_weeks,
+    rolling_consistency_active: activeWeekStarts.length,
     rolling_consistency_window: WINDOW_WEEKS,
+    weeks_missed: missed.length,
+    returns_after_gap: returns.length,
+    return_gap_weeks_max: returnGapWeeksMax,
     plan_adjustment_keep: planAdjustmentRow.plan_adjustment_keep,
     plan_adjustment_smaller: planAdjustmentRow.plan_adjustment_smaller,
     plan_adjustment_change_trigger: planAdjustmentRow.plan_adjustment_change_trigger,
